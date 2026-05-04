@@ -67,8 +67,8 @@ The two paths share: LLM client, Slack client, Postgres connection, error handli
 | GitHub | `octokit` | Official |
 | Validation | `zod` | Tool input parsing, env validation |
 | Cron | GitHub Actions + endpoint | Free, no extra infra, version-controlled schedule |
-| Container | Docker + docker-compose | Self-host friendly, one-command deploy |
-| Reverse proxy | Caddy | Auto-TLS via Let's Encrypt, single config file |
+| Container | Docker (`Dockerfile`) | Portable image; deploy via Coolify, raw Docker, or your orchestrator |
+| Reverse proxy / TLS | Host platform (e.g. Coolify, Traefik, Caddy) | Not defined in this repo; use what your VPS/PaaS provides |
 
 ---
 
@@ -122,8 +122,6 @@ cto-agent/
 ├── package.json
 ├── tsconfig.json
 ├── Dockerfile
-├── docker-compose.yml
-├── Caddyfile
 └── README.md
 ```
 
@@ -673,7 +671,7 @@ Set up `tsconfig.json`, `.env.example`, `src/index.ts` minimal Hono server, `/he
 Acceptance: `pnpm dev` runs, `curl localhost:3000/healthz` returns OK.
 
 ### Phase 1: Postgres + Drizzle (1 hour)
-Stand up Postgres in `docker-compose.yml`. Write `src/memory/schema.ts`. Configure `drizzle.config.ts`. Generate and run migrations.
+Use a hosted or local Postgres; set `DATABASE_URL`. Write `src/memory/schema.ts`. Configure `drizzle.config.ts`. Generate and run migrations.
 Acceptance: `pnpm drizzle:push` succeeds, tables exist when you connect via psql.
 
 ### Phase 2: Slack webhook with signature verify (2 hours)
@@ -708,8 +706,8 @@ Acceptance: "What did I commit to in yesterday's standup" works.
 Build `src/jobs/daily-brief.ts` and `src/routes/cron.ts`. Add GitHub Actions workflow.
 Acceptance: Manual `workflow_dispatch` runs and a brief lands in your DM. Cron schedule fires at 7am UTC tomorrow.
 
-### Phase 10: Dockerize and deploy (2 hours)
-Multi-stage Dockerfile. docker-compose.yml with app + postgres + caddy. Deploy to VPS. Update Slack Event Subscriptions URL to new domain.
+### Phase 10: Docker image + deploy (2 hours)
+Finalize multi-stage `Dockerfile`. Deploy the image on your platform (e.g. **Coolify**: connect repo, set env from `.env.example`, expose `PORT`, run `pnpm drizzle:push` or migrate against production `DATABASE_URL`). Update Slack Event Subscriptions URL to your public `/slack/events`.
 Acceptance: Slack DM works against the production endpoint, not localhost.
 
 **Total: 17 to 18 hours of focused work. Spread over a week comfortably.**
@@ -769,67 +767,15 @@ EXPOSE 3000
 CMD ["node", "dist/index.js"]
 ```
 
-### docker-compose.yml
+### Deploy (generic)
 
-```yaml
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: cto
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: cto_agent
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    restart: unless-stopped
+1. Build and run the **`Dockerfile`** (or let **Coolify** / CI build it). Ensure **`DATABASE_URL`** and all secrets are set in the platform env (see **§4**).
+2. Apply migrations: `drizzle-kit push` or generated migrations, pointed at production Postgres.
+3. Set Slack **Event Subscriptions** **Request URL** to `https://<your-public-host>/slack/events`.
 
-  app:
-    build: .
-    env_file: .env
-    depends_on:
-      - postgres
-    expose:
-      - "3000"
-    restart: unless-stopped
+This repo does **not** ship `docker-compose` or a `Caddyfile`; routing and TLS are handled by your deployment environment.
 
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - app
-    restart: unless-stopped
-
-volumes:
-  postgres-data:
-  caddy-data:
-  caddy-config:
-```
-
-### Caddyfile
-
-```
-cto-agent.yamlgroup.tech {
-  reverse_proxy app:3000
-  encode gzip
-}
-```
-
-### Deploy steps
-
-1. `ssh` to VPS
-2. `git clone` your repo
-3. `cp .env.example .env` and fill in
-4. `docker compose up -d`
-5. `docker compose logs -f app` to watch
-6. `docker compose exec app node dist/scripts/migrate.js` (or run drizzle-kit push)
-7. Update Slack Event Subscriptions URL to `https://cto-agent.yamlgroup.tech/slack/events`
-8. Test by DMing the bot
+**Coolify:** connect the Git repo, use **Dockerfile** build, set port to **`PORT`** (default 3000), health check **`/healthz`**.
 
 ---
 

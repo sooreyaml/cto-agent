@@ -8,7 +8,10 @@ import { logger } from "../utils/logger.js";
 export type AgentInput = {
   channelId: string;
   slackUserId: string;
+  /** Plain text from Slack (may be empty if only images). */
   userMessage: string;
+  /** Data URLs `data:image/...;base64,...` from Slack file downloads. */
+  imageDataUrls?: string[];
 };
 
 const MAX_ITERATIONS = 10;
@@ -21,10 +24,29 @@ export async function runAgent(input: AgentInput) {
 
   const history = await loadHistory(input.channelId, 24);
   const historyLen = history.length;
+
+  const textPart = input.userMessage.trim() || "(User sent an image with no caption.)";
+  const userMsg: ChatCompletionMessageParam =
+    input.imageDataUrls && input.imageDataUrls.length > 0
+      ? {
+          role: "user",
+          content: [
+            { type: "text", text: textPart },
+            ...input.imageDataUrls.map(
+              (url) =>
+                ({
+                  type: "image_url",
+                  image_url: { url },
+                }) as const
+            ),
+          ],
+        }
+      : { role: "user", content: input.userMessage };
+
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: buildSystemPrompt() },
     ...history,
-    { role: "user", content: input.userMessage },
+    userMsg,
   ];
 
   let finalText = "";
@@ -104,11 +126,16 @@ export async function runAgent(input: AgentInput) {
       "I hit the max tool-call limit without finishing. Try rephrasing.";
   }
 
+  const logUserSummary =
+    input.imageDataUrls?.length ?
+      `${input.userMessage.trim() || "[no text]"} [${input.imageDataUrls.length} image(s)]`
+    : input.userMessage;
+
   try {
     await persistTurn({
       channelId: input.channelId,
       slackUserId: input.slackUserId,
-      userMessage: input.userMessage,
+      userMessage: logUserSummary,
       finalText,
       messages,
       historyLen,

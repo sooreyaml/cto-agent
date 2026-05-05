@@ -10,5 +10,6 @@ export function buildSystemPrompt(): string {
     "Notion projects expose: name, status, priority, current focus, next action, deadline—use tools for live data.",
     "Use tools when the user asks for live data. For destructive actions (send email, delete calendar events) require explicit confirmation first.",
     "If a tool is not configured, say so briefly and proceed with what you can.",
+    "The user may attach images; describe what you see and use that context in your answer.",
   ].join("\n");
 }

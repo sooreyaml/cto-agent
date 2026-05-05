@@ -53,12 +53,19 @@ function messageToInsert(
     };
   }
   if (msg.role === "user") {
-    const content =
-      typeof msg.content === "string"
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map((p) => ("text" in p ? p.text : "")).join("\n")
-          : "";
+    let content: string;
+    if (typeof msg.content === "string") {
+      content = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      const parts = msg.content.map((p) => {
+        if (p.type === "text") return p.text;
+        if (p.type === "image_url") return "[image]";
+        return "";
+      });
+      content = parts.filter(Boolean).join(" ").trim() || "[image]";
+    } else {
+      content = "";
+    }
     return { conversationId, role: "user", content };
   }
   throw new Error(`Cannot persist message role: ${(msg as ChatCompletionMessageParam).role}`);

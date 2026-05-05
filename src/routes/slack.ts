@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { verifySlackSignature, postChannelMessage, slack } from "../integrations/slack.js";
+import { fetchSlackImageDataUrls, type SlackFile } from "../integrations/slack-files.js";
 import { isDuplicateSlackEvent } from "../integrations/slack-dedupe.js";
 import { dispatchDetached } from "../utils/dispatch.js";
 import { runAgent } from "../agent/loop.js";
@@ -49,7 +50,12 @@ type SlackEvent = {
   bot_id?: string;
   subtype?: string;
   channel_type?: string;
+  files?: SlackFile[];
 };
+
+function slackEventHasImageFiles(files: SlackFile[] | undefined): boolean {
+  return files?.some((f) => f.mimetype?.startsWith("image/")) ?? false;
+}
 
 async function handleEvent(body: { event?: SlackEvent }) {
   const event = body.event;
@@ -59,13 +65,20 @@ async function handleEvent(body: { event?: SlackEvent }) {
     event.bot_id ||
     event.subtype === "bot_message" ||
     event.subtype === "message_changed" ||
-    event.channel_type !== "im"
+    event.channel_type !== "im" ||
+    !event.user
   ) {
     return;
   }
 
   const userMessage = typeof event.text === "string" ? event.text : "";
-  if (!userMessage.trim()) {
+  const mayHaveImages = slackEventHasImageFiles(event.files);
+  if (!userMessage.trim() && !mayHaveImages) {
+    return;
+  }
+
+  const imageDataUrls = await fetchSlackImageDataUrls(event.files);
+  if (!userMessage.trim() && imageDataUrls.length === 0) {
     return;
   }
 
@@ -78,8 +91,9 @@ async function handleEvent(body: { event?: SlackEvent }) {
 
     const { text } = await runAgent({
       channelId: event.channel!,
-      slackUserId: event.user!,
+      slackUserId: event.user,
       userMessage,
+      ...(imageDataUrls.length > 0 ? { imageDataUrls } : {}),
     });
 
     await postChannelMessage(event.channel!, text, {

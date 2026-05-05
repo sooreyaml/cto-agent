@@ -26,6 +26,8 @@ export const messages = pgTable("messages", {
   toolCalls: jsonb("tool_calls"),
   toolCallId: text("tool_call_id"),
   toolName: text("tool_name"),
+  /** Monotonic per conversation; stable ordering when created_at ties. */
+  sortSeq: integer("sort_seq").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

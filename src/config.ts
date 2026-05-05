@@ -22,6 +22,10 @@ const envSchema = z.object({
   NOTION_PROJECTS_DB_ID: z.string().optional().default(""),
   NOTION_TASKS_DB_ID: z.string().optional().default(""),
   NOTION_LOGS_DB_ID: z.string().optional().default(""),
+  /**
+   * Shape of your "Status" column: `status` = Notion Status property; `select` = classic single-select.
+   */
+  NOTION_STATUS_PROPERTY_KIND: z.enum(["select", "status"]).default("status"),
 
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(""),

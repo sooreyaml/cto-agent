@@ -1,4 +1,5 @@
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints.js";
+import { config } from "../config.js";
 
 /**
  * Notion project database property names (case-sensitive). Adjust if yours differ.
@@ -81,6 +82,7 @@ export function extractProjectBriefFields(page: PageObjectResponse): ProjectBrie
   let status = "";
   const st = props[PROJECT_PROPS.status];
   if (st?.type === "status") status = st.status?.name ?? "";
+  else if (st?.type === "select") status = st.select?.name ?? "";
 
   let deadline: string | null = null;
   const dl = props[PROJECT_PROPS.deadline];
@@ -94,4 +96,30 @@ export function extractProjectBriefFields(page: PageObjectResponse): ProjectBrie
     nextAction: readRichText(props[PROJECT_PROPS.nextAction]),
     deadline,
   };
+}
+
+/** Database query filter for Status / single-select by kind from env. */
+export function notionStatusDbFilter(
+  propertyName: string,
+  equals: string
+): { property: string; select: { equals: string } } | { property: string; status: { equals: string } } {
+  if (config.NOTION_STATUS_PROPERTY_KIND === "select") {
+    return { property: propertyName, select: { equals } };
+  }
+  return { property: propertyName, status: { equals } };
+}
+
+/** `pages.create` / `pages.update` payload for status or select column. */
+export function notionStatusUpdatePayload(name: string) {
+  if (config.NOTION_STATUS_PROPERTY_KIND === "select") {
+    return { select: { name } };
+  }
+  return { status: { name } };
+}
+
+export function notionStatusClearPayload() {
+  if (config.NOTION_STATUS_PROPERTY_KIND === "select") {
+    return { select: null };
+  }
+  return { status: null };
 }

@@ -6,12 +6,13 @@ import { getGmail, getCalendar } from "../integrations/google.js";
 import { getOctokit } from "../integrations/github.js";
 import { granolaRequest } from "../integrations/granola.js";
 import { extractProjectBriefFields } from "../lib/notion-project-fields.js";
+import { mapTaskRow } from "../lib/notion-task-fields.js";
 import { postDmToUser } from "../integrations/slack.js";
 import { logger } from "../utils/logger.js";
 
 async function safe<T>(
   label: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
 ): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
   try {
     const data = await fn();
@@ -25,18 +26,33 @@ async function safe<T>(
 
 export async function runDailyBrief(): Promise<void> {
   const notionPart = await safe("notion", async () => {
-    if (!config.NOTION_TOKEN || !config.NOTION_PROJECTS_DB_ID) return { skipped: true as const };
+    if (!config.NOTION_TOKEN) return { skipped: true as const };
     const notion = getNotion();
-    const res = await notion.databases.query({
-      database_id: config.NOTION_PROJECTS_DB_ID,
-      page_size: 25,
-    });
-    const rows: ReturnType<typeof extractProjectBriefFields>[] = [];
-    for (const r of res.results) {
-      if (!isFullPage(r)) continue;
-      rows.push(extractProjectBriefFields(r));
+    if (config.NOTION_PROJECTS_DB_ID) {
+      const res = await notion.databases.query({
+        database_id: config.NOTION_PROJECTS_DB_ID,
+        page_size: 25,
+      });
+      const rows: ReturnType<typeof extractProjectBriefFields>[] = [];
+      for (const r of res.results) {
+        if (!isFullPage(r)) continue;
+        rows.push(extractProjectBriefFields(r));
+      }
+      return { source: "projects" as const, rows };
     }
-    return rows;
+    if (config.NOTION_TASKS_DB_ID) {
+      const res = await notion.databases.query({
+        database_id: config.NOTION_TASKS_DB_ID,
+        page_size: 40,
+      });
+      const rows: ReturnType<typeof mapTaskRow>[] = [];
+      for (const r of res.results) {
+        if (!isFullPage(r)) continue;
+        rows.push(mapTaskRow(r));
+      }
+      return { source: "tasks" as const, rows };
+    }
+    return { skipped: true as const };
   });
 
   const calendarPart = await safe("calendar", async () => {
@@ -82,8 +98,12 @@ export async function runDailyBrief(): Promise<void> {
       });
       const headers = msg.data.payload?.headers ?? [];
       items.push({
-        subject: headers.find((h) => h.name?.toLowerCase() === "subject")?.value ?? undefined,
-        from: headers.find((h) => h.name?.toLowerCase() === "from")?.value ?? undefined,
+        subject:
+          headers.find((h) => h.name?.toLowerCase() === "subject")?.value ??
+          undefined,
+        from:
+          headers.find((h) => h.name?.toLowerCase() === "from")?.value ??
+          undefined,
         snippet: msg.data.snippet ?? undefined,
       });
     }
@@ -91,13 +111,19 @@ export async function runDailyBrief(): Promise<void> {
   });
 
   const githubPart = await safe("github", async () => {
-    if (!config.GITHUB_PAT || !config.GITHUB_BRIEF_REPOS.trim()) return { skipped: true as const };
+    if (!config.GITHUB_PAT || !config.GITHUB_BRIEF_REPOS.trim())
+      return { skipped: true as const };
     const octokit = getOctokit();
-    const specs = config.GITHUB_BRIEF_REPOS.split(",").map((s) => s.trim()).filter(Boolean);
+    const specs = config.GITHUB_BRIEF_REPOS.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     const out: {
       repo: string;
       open_prs: { title: string; url: string }[];
-      recent_failed_runs: { name: string | undefined; url: string | undefined }[];
+      recent_failed_runs: {
+        name: string | undefined;
+        url: string | undefined;
+      }[];
     }[] = [];
     for (const spec of specs) {
       const [owner, repo] = spec.split("/");
@@ -114,7 +140,9 @@ export async function runDailyBrief(): Promise<void> {
         branch: "main",
         per_page: 8,
       });
-      const failing = (runs.data.workflow_runs ?? []).filter((r) => r.conclusion === "failure");
+      const failing = (runs.data.workflow_runs ?? []).filter(
+        (r) => r.conclusion === "failure",
+      );
       out.push({
         repo: spec,
         open_prs: prs.data.map((p) => ({ title: p.title, url: p.html_url })),
@@ -152,9 +180,10 @@ export async function runDailyBrief(): Promise<void> {
           "Formatting rules: *bold* with single asterisks only (never **). _italic_ with underscores.",
           "Do not use # or ## headings; start a section with a short bold line like *Today* or *Projects* then bullet lines.",
           "For links use <https://example.com|label> only when a URL is essential; do not paste bare long URLs.",
-          "Include sections only where you have data: *Today* (calendar), *Inbox* (Gmail), *Code* (GitHub), *Projects* (Notion).",
-          "For *Projects* (Notion): summarize each row using name, status, priority, currentFocus, nextAction, deadline when present.",
-          "Call out blocked or high-priority work first. Omit empty fields; keep each project to 1–3 lines.",
+          "Include sections only where you have data: *Today* (calendar), *Inbox* (Gmail), *Code* (GitHub), Notion (*Projects* or *Tasks*).",
+          "When notion.data exists and notion.ok: if data.source is projects, section *Projects* — name, status, priority, currentFocus, nextAction, deadline.",
+          "If data.source is tasks, section *Tasks* — name, status, due; omit empty fields.",
+          "Call out blocked or high-priority work first. Omit empty fields; keep each row to 1–3 lines.",
           "If a source was skipped or errored, omit or one short line. Stay under ~800 words.",
         ].join(" "),
       },

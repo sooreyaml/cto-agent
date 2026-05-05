@@ -3,9 +3,16 @@ import { isFullPage } from "@notionhq/client";
 import { config } from "../config.js";
 import { getNotion } from "../integrations/notion.js";
 import type { ToolDef } from "../agent/tool-types.js";
-import { PROJECT_PROPS, extractProjectBriefFields } from "../lib/notion-project-fields.js";
+import {
+  PROJECT_PROPS,
+  extractProjectBriefFields,
+  notionStatusDbFilter,
+  notionStatusUpdatePayload,
+  notionStatusClearPayload,
+} from "../lib/notion-project-fields.js";
+import { TASK_PROPS, mapTaskRow } from "../lib/notion-task-fields.js";
 
-/** Project names match `PROJECT_PROPS` in `src/lib/notion-project-fields.ts`. */
+/** Project names match `PROJECT_PROPS`; task column names match `TASK_PROPS`. */
 const P = {
   projectTitle: PROJECT_PROPS.title,
   projectStatus: PROJECT_PROPS.status,
@@ -13,38 +20,25 @@ const P = {
   projectPriority: PROJECT_PROPS.priority,
   projectCurrentFocus: PROJECT_PROPS.currentFocus,
   projectNextAction: PROJECT_PROPS.nextAction,
-  taskTitle: "Name",
-  taskDue: "Due",
-  taskStatus: "Status",
-  taskProject: "Project",
+  taskTitle: TASK_PROPS.title,
+  taskDue: TASK_PROPS.due,
+  taskStatus: TASK_PROPS.status,
+  taskProject: TASK_PROPS.project,
 } as const;
 
 function requireProjectsDb() {
-  if (!config.NOTION_PROJECTS_DB_ID) throw new Error("NOTION_PROJECTS_DB_ID not configured");
+  if (!config.NOTION_PROJECTS_DB_ID)
+    throw new Error("NOTION_PROJECTS_DB_ID not configured");
 }
 
 function requireTasksDb() {
-  if (!config.NOTION_TASKS_DB_ID) throw new Error("NOTION_TASKS_DB_ID not configured");
+  if (!config.NOTION_TASKS_DB_ID)
+    throw new Error("NOTION_TASKS_DB_ID not configured");
 }
 
-function titleFromPage(page: PageObjectResponse): string {
-  for (const [, prop] of Object.entries(page.properties)) {
-    if (
-      prop &&
-      typeof prop === "object" &&
-      "type" in prop &&
-      prop.type === "title" &&
-      "title" in prop &&
-      Array.isArray((prop as { title: { plain_text: string }[] }).title)
-    ) {
-      const title = (prop as { title: { plain_text: string }[] }).title;
-      return title.map((t: { plain_text: string }) => t.plain_text).join("") || "Untitled";
-    }
-  }
-  return "Untitled";
-}
-
-function priorityPayload(value: string): { select: { name: string } } | { number: number } {
+function priorityPayload(
+  value: string,
+): { select: { name: string } } | { number: number } {
   const n = Number(value);
   if (value.trim() !== "" && !Number.isNaN(n) && String(n) === value.trim()) {
     return { number: n };
@@ -61,30 +55,19 @@ function mapProjectRow(page: PageObjectResponse) {
   };
 }
 
-function mapTaskRow(page: PageObjectResponse) {
-  const props = page.properties;
-  const name = titleFromPage(page);
-  let status = "";
-  const st = props[P.taskStatus];
-  if (st?.type === "status") status = st.status?.name ?? "";
-  let due: string | null = null;
-  const d = props[P.taskDue];
-  if (d?.type === "date") due = d.date?.start ?? null;
-  let projectId: string | null = null;
-  const rel = props[P.taskProject];
-  if (rel?.type === "relation" && rel.relation[0]) projectId = rel.relation[0].id;
-  return { id: page.id, name, status, due, projectPageId: projectId, url: page.url };
-}
-
 function mapPages(results: unknown[]) {
   return results
-    .filter((r): r is PageObjectResponse => isFullPage(r as Parameters<typeof isFullPage>[0]))
+    .filter((r): r is PageObjectResponse =>
+      isFullPage(r as Parameters<typeof isFullPage>[0]),
+    )
     .map((p) => mapProjectRow(p));
 }
 
 function mapTaskPages(results: unknown[]) {
   return results
-    .filter((r): r is PageObjectResponse => isFullPage(r as Parameters<typeof isFullPage>[0]))
+    .filter((r): r is PageObjectResponse =>
+      isFullPage(r as Parameters<typeof isFullPage>[0]),
+    )
     .map((p) => mapTaskRow(p));
 }
 
@@ -99,7 +82,10 @@ export const notionTools: Record<string, ToolDef> = {
         parameters: {
           type: "object",
           properties: {
-            status: { type: "string", description: "Optional status name to filter (exact)" },
+            status: {
+              type: "string",
+              description: "Optional status name to filter (exact)",
+            },
             limit: { type: "integer", description: "Max results (default 20)" },
           },
         },
@@ -109,7 +95,7 @@ export const notionTools: Record<string, ToolDef> = {
       requireProjectsDb();
       const notion = getNotion();
       const filter = args.status
-        ? { property: P.projectStatus, status: { equals: args.status } }
+        ? notionStatusDbFilter(P.projectStatus, args.status)
         : undefined;
       const res = await notion.databases.query({
         database_id: config.NOTION_PROJECTS_DB_ID,
@@ -130,11 +116,27 @@ export const notionTools: Record<string, ToolDef> = {
           type: "object",
           properties: {
             name: { type: "string", description: "Project title" },
-            status: { type: "string", description: "Status option name (must exist in Notion)" },
-            deadline: { type: "string", description: "ISO date YYYY-MM-DD or empty" },
-            priority: { type: "string", description: "Select name or numeric string if Priority is a number" },
-            current_focus: { type: "string", description: "Current focus (rich text)" },
-            next_action: { type: "string", description: "Next action (rich text)" },
+            status: {
+              type: "string",
+              description: "Status option name (must exist in Notion)",
+            },
+            deadline: {
+              type: "string",
+              description: "ISO date YYYY-MM-DD or empty",
+            },
+            priority: {
+              type: "string",
+              description:
+                "Select name or numeric string if Priority is a number",
+            },
+            current_focus: {
+              type: "string",
+              description: "Current focus (rich text)",
+            },
+            next_action: {
+              type: "string",
+              description: "Next action (rich text)",
+            },
           },
           required: ["name"],
         },
@@ -156,7 +158,7 @@ export const notionTools: Record<string, ToolDef> = {
         },
       };
       if (args.status) {
-        props[P.projectStatus] = { status: { name: args.status } };
+        props[P.projectStatus] = notionStatusUpdatePayload(args.status);
       }
       if (args.deadline) {
         props[P.projectDeadline] = { date: { start: args.deadline } };
@@ -178,7 +180,8 @@ export const notionTools: Record<string, ToolDef> = {
         parent: { database_id: config.NOTION_PROJECTS_DB_ID },
         properties: props as never,
       });
-      if (!isFullPage(created)) return { id: created.id, url: (created as { url?: string }).url };
+      if (!isFullPage(created))
+        return { id: created.id, url: (created as { url?: string }).url };
       return mapProjectRow(created);
     },
   },
@@ -195,8 +198,15 @@ export const notionTools: Record<string, ToolDef> = {
             page_id: { type: "string", description: "Notion page UUID" },
             name: { type: "string" },
             status: { type: "string" },
-            deadline: { type: "string", description: "YYYY-MM-DD or empty to clear" },
-            priority: { type: "string", description: "Set/clear priority (empty string clears select; number as string for number columns)" },
+            deadline: {
+              type: "string",
+              description: "YYYY-MM-DD or empty to clear",
+            },
+            priority: {
+              type: "string",
+              description:
+                "Set/clear priority (empty string clears select; number as string for number columns)",
+            },
             current_focus: { type: "string" },
             next_action: { type: "string" },
           },
@@ -220,7 +230,10 @@ export const notionTools: Record<string, ToolDef> = {
         props[P.projectTitle] = { title: [{ text: { content: args.name } }] };
       }
       if (args.status !== undefined) {
-        props[P.projectStatus] = { status: { name: args.status } };
+        props[P.projectStatus] =
+          args.status === ""
+            ? notionStatusClearPayload()
+            : notionStatusUpdatePayload(args.status);
       }
       if (args.deadline !== undefined) {
         props[P.projectDeadline] = args.deadline
@@ -260,7 +273,8 @@ export const notionTools: Record<string, ToolDef> = {
       type: "function",
       function: {
         name: "notion_search_tasks",
-        description: "Search tasks in the Tasks Notion database.",
+        description:
+          "Search your Notion tasks database: name, status, due, optional project link. Filter by status optionally.",
         parameters: {
           type: "object",
           properties: {
@@ -274,7 +288,7 @@ export const notionTools: Record<string, ToolDef> = {
       requireTasksDb();
       const notion = getNotion();
       const filter = args.status
-        ? { property: P.taskStatus, status: { equals: args.status } }
+        ? notionStatusDbFilter(P.taskStatus, args.status)
         : undefined;
       const res = await notion.databases.query({
         database_id: config.NOTION_TASKS_DB_ID,
@@ -290,14 +304,18 @@ export const notionTools: Record<string, ToolDef> = {
       type: "function",
       function: {
         name: "notion_create_task",
-        description: "Create a task in the Tasks database. Optionally link to a project page ID.",
+        description:
+          "Create a task in the Tasks database. Optionally link to a project page ID.",
         parameters: {
           type: "object",
           properties: {
             title: { type: "string" },
             due: { type: "string", description: "YYYY-MM-DD" },
             status: { type: "string" },
-            project_page_id: { type: "string", description: "Parent project Notion page UUID" },
+            project_page_id: {
+              type: "string",
+              description: "Parent project Notion page UUID",
+            },
           },
           required: ["title"],
         },
@@ -317,7 +335,8 @@ export const notionTools: Record<string, ToolDef> = {
         },
       };
       if (args.due) props[P.taskDue] = { date: { start: args.due } };
-      if (args.status) props[P.taskStatus] = { status: { name: args.status } };
+      if (args.status)
+        props[P.taskStatus] = notionStatusUpdatePayload(args.status);
       if (args.project_page_id) {
         props[P.taskProject] = { relation: [{ id: args.project_page_id }] };
       }
@@ -343,7 +362,10 @@ export const notionTools: Record<string, ToolDef> = {
             title: { type: "string" },
             due: { type: "string" },
             status: { type: "string" },
-            project_page_id: { type: "string", description: "Set or replace project relation" },
+            project_page_id: {
+              type: "string",
+              description: "Set or replace project relation",
+            },
           },
           required: ["page_id"],
         },
@@ -363,10 +385,15 @@ export const notionTools: Record<string, ToolDef> = {
         props[P.taskTitle] = { title: [{ text: { content: args.title } }] };
       }
       if (args.due !== undefined) {
-        props[P.taskDue] = args.due ? { date: { start: args.due } } : { date: null };
+        props[P.taskDue] = args.due
+          ? { date: { start: args.due } }
+          : { date: null };
       }
       if (args.status !== undefined) {
-        props[P.taskStatus] = { status: { name: args.status } };
+        props[P.taskStatus] =
+          args.status === ""
+            ? notionStatusClearPayload()
+            : notionStatusUpdatePayload(args.status);
       }
       if (args.project_page_id !== undefined) {
         props[P.taskProject] = { relation: [{ id: args.project_page_id }] };

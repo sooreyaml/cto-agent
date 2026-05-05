@@ -13,6 +13,7 @@ const PROJECT_NOTION_TOOLS = new Set([
 ]);
 
 const TASK_NOTION_TOOLS = new Set([
+  "notion_describe_tasks_database",
   "notion_search_tasks",
   "notion_create_task",
   "notion_update_task",

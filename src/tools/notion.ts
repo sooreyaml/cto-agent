@@ -406,4 +406,57 @@ export const notionTools: Record<string, ToolDef> = {
       return mapTaskRow(updated);
     },
   },
+
+  notion_describe_tasks_database: {
+    spec: {
+      type: "function",
+      function: {
+        name: "notion_describe_tasks_database",
+        description:
+          "Return the tasks database schema: each property’s type and, for Status (select or Notion status), every allowed option name. Use before create/update when status values are unknown.",
+        parameters: {
+          type: "object",
+          properties: {},
+        },
+      },
+    },
+    handler: async () => {
+      requireTasksDb();
+      const notion = getNotion();
+      const db = await notion.databases.retrieve({
+        database_id: config.NOTION_TASKS_DB_ID,
+      });
+      const properties: Record<string, Record<string, unknown>> = {};
+      for (const [name, prop] of Object.entries(db.properties)) {
+        const p = prop as {
+          type: string;
+          select?: { options: { name: string }[] };
+          status?: { options: { name: string }[] };
+          relation?: { database_id: string };
+        };
+        if (p.type === "select") {
+          properties[name] = {
+            type: "select",
+            options: p.select?.options.map((o) => o.name) ?? [],
+          };
+        } else if (p.type === "status") {
+          properties[name] = {
+            type: "status",
+            options: p.status?.options.map((o) => o.name) ?? [],
+          };
+        } else if (p.type === "relation") {
+          properties[name] = {
+            type: "relation",
+            database_id: p.relation?.database_id ?? null,
+          };
+        } else {
+          properties[name] = { type: p.type };
+        }
+      }
+      return {
+        tasks_database_id: config.NOTION_TASKS_DB_ID,
+        properties,
+      };
+    },
+  },
 };

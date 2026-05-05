@@ -3,12 +3,16 @@ import { isFullPage } from "@notionhq/client";
 import { config } from "../config.js";
 import { getNotion } from "../integrations/notion.js";
 import type { ToolDef } from "../agent/tool-types.js";
+import { PROJECT_PROPS, extractProjectBriefFields } from "../lib/notion-project-fields.js";
 
-/** Align these with your Notion DB property names. */
+/** Project names match `PROJECT_PROPS` in `src/lib/notion-project-fields.ts`. */
 const P = {
-  projectTitle: "Name",
-  projectStatus: "Status",
-  projectDeadline: "Deadline",
+  projectTitle: PROJECT_PROPS.title,
+  projectStatus: PROJECT_PROPS.status,
+  projectDeadline: PROJECT_PROPS.deadline,
+  projectPriority: PROJECT_PROPS.priority,
+  projectCurrentFocus: PROJECT_PROPS.currentFocus,
+  projectNextAction: PROJECT_PROPS.nextAction,
   taskTitle: "Name",
   taskDue: "Due",
   taskStatus: "Status",
@@ -40,16 +44,21 @@ function titleFromPage(page: PageObjectResponse): string {
   return "Untitled";
 }
 
+function priorityPayload(value: string): { select: { name: string } } | { number: number } {
+  const n = Number(value);
+  if (value.trim() !== "" && !Number.isNaN(n) && String(n) === value.trim()) {
+    return { number: n };
+  }
+  return { select: { name: value } };
+}
+
 function mapProjectRow(page: PageObjectResponse) {
-  const props = page.properties;
-  const name = titleFromPage(page);
-  let status = "";
-  const st = props[P.projectStatus];
-  if (st?.type === "status") status = st.status?.name ?? "";
-  let deadline: string | null = null;
-  const dl = props[P.projectDeadline];
-  if (dl?.type === "date") deadline = dl.date?.start ?? null;
-  return { id: page.id, name, status, deadline, url: page.url };
+  const brief = extractProjectBriefFields(page);
+  return {
+    id: page.id,
+    ...brief,
+    url: page.url,
+  };
 }
 
 function mapTaskRow(page: PageObjectResponse) {
@@ -86,7 +95,7 @@ export const notionTools: Record<string, ToolDef> = {
       function: {
         name: "notion_search_projects",
         description:
-          "Search projects in the Projects Notion database. Returns projects with Name, Status, Deadline, page ID. Optional status filter.",
+          "Search projects: returns name, status, priority, current focus, next action, deadline, id. Optional status filter.",
         parameters: {
           type: "object",
           properties: {
@@ -123,12 +132,22 @@ export const notionTools: Record<string, ToolDef> = {
             name: { type: "string", description: "Project title" },
             status: { type: "string", description: "Status option name (must exist in Notion)" },
             deadline: { type: "string", description: "ISO date YYYY-MM-DD or empty" },
+            priority: { type: "string", description: "Select name or numeric string if Priority is a number" },
+            current_focus: { type: "string", description: "Current focus (rich text)" },
+            next_action: { type: "string", description: "Next action (rich text)" },
           },
           required: ["name"],
         },
       },
     },
-    handler: async (args: { name: string; status?: string; deadline?: string }) => {
+    handler: async (args: {
+      name: string;
+      status?: string;
+      deadline?: string;
+      priority?: string;
+      current_focus?: string;
+      next_action?: string;
+    }) => {
       requireProjectsDb();
       const notion = getNotion();
       const props: Record<string, unknown> = {
@@ -141,6 +160,19 @@ export const notionTools: Record<string, ToolDef> = {
       }
       if (args.deadline) {
         props[P.projectDeadline] = { date: { start: args.deadline } };
+      }
+      if (args.priority) {
+        props[P.projectPriority] = priorityPayload(args.priority) as never;
+      }
+      if (args.current_focus) {
+        props[P.projectCurrentFocus] = {
+          rich_text: [{ text: { content: args.current_focus } }],
+        };
+      }
+      if (args.next_action) {
+        props[P.projectNextAction] = {
+          rich_text: [{ text: { content: args.next_action } }],
+        };
       }
       const created = await notion.pages.create({
         parent: { database_id: config.NOTION_PROJECTS_DB_ID },
@@ -164,12 +196,23 @@ export const notionTools: Record<string, ToolDef> = {
             name: { type: "string" },
             status: { type: "string" },
             deadline: { type: "string", description: "YYYY-MM-DD or empty to clear" },
+            priority: { type: "string", description: "Set/clear priority (empty string clears select; number as string for number columns)" },
+            current_focus: { type: "string" },
+            next_action: { type: "string" },
           },
           required: ["page_id"],
         },
       },
     },
-    handler: async (args: { page_id: string; name?: string; status?: string; deadline?: string }) => {
+    handler: async (args: {
+      page_id: string;
+      name?: string;
+      status?: string;
+      deadline?: string;
+      priority?: string;
+      current_focus?: string;
+      next_action?: string;
+    }) => {
       requireProjectsDb();
       const notion = getNotion();
       const props: Record<string, unknown> = {};
@@ -183,6 +226,25 @@ export const notionTools: Record<string, ToolDef> = {
         props[P.projectDeadline] = args.deadline
           ? { date: { start: args.deadline } }
           : { date: null };
+      }
+      if (args.priority !== undefined) {
+        props[P.projectPriority] = (
+          args.priority === ""
+            ? { select: null }
+            : priorityPayload(args.priority)
+        ) as never;
+      }
+      if (args.current_focus !== undefined) {
+        props[P.projectCurrentFocus] =
+          args.current_focus === ""
+            ? { rich_text: [] }
+            : { rich_text: [{ text: { content: args.current_focus } }] };
+      }
+      if (args.next_action !== undefined) {
+        props[P.projectNextAction] =
+          args.next_action === ""
+            ? { rich_text: [] }
+            : { rich_text: [{ text: { content: args.next_action } }] };
       }
       const updated = await notion.pages.update({
         page_id: args.page_id,

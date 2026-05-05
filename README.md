@@ -44,7 +44,7 @@ Use the repo **`Dockerfile`**: image runs `node dist/index.js` and listens on **
 
 ### Notion property names
 
-Project database should use properties **`Name`** (title), **`Status`** (status), **`Deadline`** (date). Tasks database: **`Name`**, **`Due`**, **`Status`**, **`Project`** (relation to project page). Rename in Notion or adjust `P` in [`src/tools/notion.ts`](./src/tools/notion.ts).
+Project database: **`Name`** (title), **`Status`** (status), **`Deadline`** (date), **`Priority`** (select, status, number, or text), **`Current focus`** (rich text), **`Next action`** (rich text). Names are defined in [`src/lib/notion-project-fields.ts`](./src/lib/notion-project-fields.ts). Tasks database: **`Name`**, **`Due`**, **`Status`**, **`Project`** (relation).
 
 ### Granola
 

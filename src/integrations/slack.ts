@@ -4,11 +4,55 @@ import { config } from "../config.js";
 
 export const slack = new WebClient(config.SLACK_BOT_TOKEN);
 
-/** Opens a DM with the user and posts plain text (used by daily brief). */
-export async function postDmToUser(userId: string, text: string): Promise<void> {
+type PostDmOptions = {
+  /** Use Slack mrkdwn via Block Kit so *bold*, lists, and <url|label> render. Default false (plain). */
+  mrkdwn?: boolean;
+};
+
+function splitMrkdwnSections(body: string, maxLen = 2800): string[] {
+  const t = body.trim();
+  if (t.length <= maxLen) return [t];
+  const parts: string[] = [];
+  let rest = t;
+  while (rest.length) {
+    if (rest.length <= maxLen) {
+      parts.push(rest);
+      break;
+    }
+    let cut = rest.lastIndexOf("\n\n", maxLen);
+    if (cut < maxLen * 0.4) cut = rest.lastIndexOf("\n", maxLen);
+    if (cut < maxLen * 0.3) cut = maxLen;
+    parts.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  return parts;
+}
+
+/** Opens a DM with the user. Use `mrkdwn: true` for daily briefs (Slack is not CommonMark). */
+export async function postDmToUser(
+  userId: string,
+  text: string,
+  options: PostDmOptions = {}
+): Promise<void> {
   const opened = await slack.conversations.open({ users: userId });
   const channel = opened.channel?.id;
   if (!channel) throw new Error("Could not open Slack DM channel");
+
+  if (options.mrkdwn) {
+    const chunks = splitMrkdwnSections(text);
+    const blocks = chunks.map((chunk) => ({
+      type: "section" as const,
+      text: { type: "mrkdwn" as const, text: chunk },
+    }));
+    const fallback = chunks.join("\n\n").replace(/[*_`<>]/g, "").slice(0, 400);
+    await slack.chat.postMessage({
+      channel,
+      text: fallback || "Daily brief",
+      blocks,
+    });
+    return;
+  }
+
   await slack.chat.postMessage({ channel, text });
 }
 

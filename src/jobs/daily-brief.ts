@@ -5,6 +5,7 @@ import { getNotion } from "../integrations/notion.js";
 import { getGmail, getCalendar } from "../integrations/google.js";
 import { getOctokit } from "../integrations/github.js";
 import { granolaRequest } from "../integrations/granola.js";
+import { extractProjectBriefFields } from "../lib/notion-project-fields.js";
 import { postDmToUser } from "../integrations/slack.js";
 import { logger } from "../utils/logger.js";
 
@@ -28,22 +29,12 @@ export async function runDailyBrief(): Promise<void> {
     const notion = getNotion();
     const res = await notion.databases.query({
       database_id: config.NOTION_PROJECTS_DB_ID,
-      page_size: 15,
+      page_size: 25,
     });
-    const rows: { name: string; status: string; url: string }[] = [];
+    const rows: ReturnType<typeof extractProjectBriefFields>[] = [];
     for (const r of res.results) {
       if (!isFullPage(r)) continue;
-      let name = "";
-      for (const prop of Object.values(r.properties)) {
-        if (prop.type === "title") {
-          name = prop.title.map((t) => t.plain_text).join("");
-          break;
-        }
-      }
-      let status = "";
-      const st = r.properties.Status;
-      if (st?.type === "status") status = st.status?.name ?? "";
-      rows.push({ name, status, url: r.url });
+      rows.push(extractProjectBriefFields(r));
     }
     return rows;
   });
@@ -157,10 +148,14 @@ export async function runDailyBrief(): Promise<void> {
       {
         role: "system",
         content: [
-          "You write a short daily executive brief for Slack.",
-          "Use short headings and bullets. Include sections only when you have data:",
-          "**Today** (calendar), **Inbox** (Gmail), **Code** (GitHub PRs and failed runs), **Projects** (Notion).",
-          "If a source was skipped or errored, omit that section or say one line. Stay under ~800 words.",
+          "You write a short daily executive brief for Slack using Slack mrkdwn (NOT GitHub/CommonMark).",
+          "Formatting rules: *bold* with single asterisks only (never **). _italic_ with underscores.",
+          "Do not use # or ## headings; start a section with a short bold line like *Today* or *Projects* then bullet lines.",
+          "For links use <https://example.com|label> only when a URL is essential; do not paste bare long URLs.",
+          "Include sections only where you have data: *Today* (calendar), *Inbox* (Gmail), *Code* (GitHub), *Projects* (Notion).",
+          "For *Projects* (Notion): summarize each row using name, status, priority, currentFocus, nextAction, deadline when present.",
+          "Call out blocked or high-priority work first. Omit empty fields; keep each project to 1–3 lines.",
+          "If a source was skipped or errored, omit or one short line. Stay under ~800 words.",
         ].join(" "),
       },
       { role: "user", content: JSON.stringify(bundle) },
@@ -175,6 +170,6 @@ export async function runDailyBrief(): Promise<void> {
     return;
   }
 
-  await postDmToUser(config.SLACK_USER_ID, text);
+  await postDmToUser(config.SLACK_USER_ID, text, { mrkdwn: true });
   logger.info("daily brief sent");
 }

@@ -1,9 +1,29 @@
 import { config } from "../config.js";
 
+/** Wall-clock "today" in the user's timezone, for every request (avoids invented dates). */
+function currentCalendarContext(): string {
+  const now = new Date();
+  const long = new Intl.DateTimeFormat("en-GB", {
+    timeZone: config.TIMEZONE,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(now);
+  const iso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: config.TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  return `Today (authoritative for this chat turn, ${config.TIMEZONE}) is ${long} — calendar date *${iso}*. Use only this when the user asks about "today", weekends, or due dates; do not guess another year or day.`;
+}
+
 export function buildSystemPrompt(): string {
   return [
     "You are CTO Agent, a concise technical chief-of-staff assistant in Slack.",
-    `The user's timezone is ${config.TIMEZONE}. Prefer short answers; use bullets when listing items.`,
+    currentCalendarContext(),
+    "Prefer short answers; use bullets when listing items.",
     "Formatting: this text is shown with Slack mrkdwn. Use *bold* with single asterisks only (never **). _italic_ uses underscores.",
     "Do not use # / ## headings. Do not use --- horizontal rules (they show as raw text). Separate sections with a blank line and a *Section title* line instead.",
     "Links: <https://example.com|short label>. Inline code: single `backticks` (no language fences for short snippets).",

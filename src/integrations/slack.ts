@@ -4,9 +4,11 @@ import { config } from "../config.js";
 
 export const slack = new WebClient(config.SLACK_BOT_TOKEN);
 
-type PostDmOptions = {
-  /** Use Slack mrkdwn via Block Kit so *bold*, lists, and <url|label> render. Default false (plain). */
+export type PostSlackMessageOptions = {
+  /** Use Slack mrkdwn via Block Kit. Default false (plain `text` only). */
   mrkdwn?: boolean;
+  /** Reply in the same thread as the user's message (recommended for DM threads). */
+  thread_ts?: string;
 };
 
 function splitMrkdwnSections(body: string, maxLen = 2800): string[] {
@@ -28,17 +30,15 @@ function splitMrkdwnSections(body: string, maxLen = 2800): string[] {
   return parts;
 }
 
-/** Opens a DM with the user. Use `mrkdwn: true` for daily briefs (Slack is not CommonMark). */
-export async function postDmToUser(
-  userId: string,
+/** Post to any channel / DM id. Prefer `mrkdwn: true` for LLM copy so *bold* and `code` render. */
+export async function postChannelMessage(
+  channel: string,
   text: string,
-  options: PostDmOptions = {}
+  options: PostSlackMessageOptions = {}
 ): Promise<void> {
-  const opened = await slack.conversations.open({ users: userId });
-  const channel = opened.channel?.id;
-  if (!channel) throw new Error("Could not open Slack DM channel");
+  const { mrkdwn = false, thread_ts } = options;
 
-  if (options.mrkdwn) {
+  if (mrkdwn) {
     const chunks = splitMrkdwnSections(text);
     const blocks = chunks.map((chunk) => ({
       type: "section" as const,
@@ -47,13 +47,26 @@ export async function postDmToUser(
     const fallback = chunks.join("\n\n").replace(/[*_`<>]/g, "").slice(0, 400);
     await slack.chat.postMessage({
       channel,
-      text: fallback || "Daily brief",
+      thread_ts,
+      text: fallback || "CTO Agent",
       blocks,
     });
     return;
   }
 
-  await slack.chat.postMessage({ channel, text });
+  await slack.chat.postMessage({ channel, text, thread_ts });
+}
+
+/** Opens a DM and posts; same options as `postChannelMessage`. */
+export async function postDmToUser(
+  userId: string,
+  text: string,
+  options: PostSlackMessageOptions = {}
+): Promise<void> {
+  const opened = await slack.conversations.open({ users: userId });
+  const channel = opened.channel?.id;
+  if (!channel) throw new Error("Could not open Slack DM channel");
+  await postChannelMessage(channel, text, options);
 }
 
 export function verifySlackSignature(

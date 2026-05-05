@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { verifySlackSignature, slack } from "../integrations/slack.js";
+import { verifySlackSignature, postChannelMessage, slack } from "../integrations/slack.js";
 import { isDuplicateSlackEvent } from "../integrations/slack-dedupe.js";
 import { dispatchDetached } from "../utils/dispatch.js";
 import { runAgent } from "../agent/loop.js";
@@ -45,6 +45,7 @@ type SlackEvent = {
   user?: string;
   text?: string;
   ts?: string;
+  thread_ts?: string;
   bot_id?: string;
   subtype?: string;
   channel_type?: string;
@@ -81,9 +82,9 @@ async function handleEvent(body: { event?: SlackEvent }) {
       userMessage,
     });
 
-    await slack.chat.postMessage({
-      channel: event.channel!,
-      text,
+    await postChannelMessage(event.channel!, text, {
+      mrkdwn: true,
+      thread_ts: event.thread_ts,
     });
 
     await slack.reactions.add({

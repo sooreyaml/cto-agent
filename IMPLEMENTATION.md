@@ -37,7 +37,7 @@ Agent Loop (max 10 iterations)
 ### Daily brief path
 
 ```
-GitHub Actions cron (0 7 * * 1-5)
+GitHub Actions cron (0 9 * * 1-5)
   ↓ curl POST /cron/daily-brief with Authorization: Bearer ${CRON_SECRET}
 Hono server
   ↓ verify cron secret
@@ -635,7 +635,7 @@ cronRoutes.post("/daily-brief", async (c) => {
 name: Daily Brief
 on:
   schedule:
-    - cron: "0 7 * * 1-5"  # 7am UTC = 8am Europe/London
+    - cron: "0 9 * * 1-5"  # 9am UTC (+0); Europe/London is UTC+0 in winter, UTC+1 in summer (BST)
   workflow_dispatch:
 
 jobs:
@@ -704,7 +704,7 @@ Acceptance: "What did I commit to in yesterday's standup" works.
 
 ### Phase 9: Daily brief job + GitHub Actions (2 hours)
 Build `src/jobs/daily-brief.ts` and `src/routes/cron.ts`. Add GitHub Actions workflow.
-Acceptance: Manual `workflow_dispatch` runs and a brief lands in your DM. Cron schedule fires at 7am UTC tomorrow.
+Acceptance: Manual `workflow_dispatch` runs and a brief lands in your DM. Cron schedule fires at 9am UTC on the configured weekdays.
 
 ### Phase 10: Docker image + deploy (2 hours)
 Finalize multi-stage `Dockerfile`. Deploy the image on your platform (e.g. **Coolify**: connect repo, set env from `.env.example`, expose `PORT`, run `pnpm drizzle:push` or migrate against production `DATABASE_URL`). Update Slack Event Subscriptions URL to your public `/slack/events`.

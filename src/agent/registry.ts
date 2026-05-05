@@ -4,6 +4,7 @@ import { gmailTools } from "../tools/gmail.js";
 import { calendarTools } from "../tools/calendar.js";
 import { githubTools } from "../tools/github.js";
 import { granolaTools } from "../tools/granola.js";
+import { slackReminderTools } from "../tools/slack-reminders.js";
 import type { ToolDef, ToolHandler } from "./tool-types.js";
 
 const PROJECT_NOTION_TOOLS = new Set([
@@ -35,6 +36,7 @@ function activeNotionTools(): Record<string, ToolDef> {
 
 const allTools: Record<string, ToolDef> = {
   ...activeNotionTools(),
+  ...slackReminderTools,
   ...gmailTools,
   ...calendarTools,
   ...githubTools,

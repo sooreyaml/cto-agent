@@ -4,6 +4,14 @@ import { config } from "../config.js";
 
 export const slack = new WebClient(config.SLACK_BOT_TOKEN);
 
+/** Opens a DM with the user and posts plain text (used by daily brief). */
+export async function postDmToUser(userId: string, text: string): Promise<void> {
+  const opened = await slack.conversations.open({ users: userId });
+  const channel = opened.channel?.id;
+  if (!channel) throw new Error("Could not open Slack DM channel");
+  await slack.chat.postMessage({ channel, text });
+}
+
 export function verifySlackSignature(
   rawBody: string,
   timestamp: string | undefined,

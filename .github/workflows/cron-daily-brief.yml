@@ -13,4 +13,4 @@ jobs:
           curl -fsSL -X POST "${{ secrets.AGENT_BASE_URL }}/cron/daily-brief" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json" \
-            --max-time 30
+            --max-time 120

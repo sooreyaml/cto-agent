@@ -1,4 +1,5 @@
-export type ToolHandler = (args: unknown) => Promise<unknown>;
+/** Args are model JSON; callers coerce per tool. */
+export type ToolHandler = (args: any) => Promise<unknown>;
 
 /** OpenAI Chat Completions `tools[]` item shape (function spec). */
 export type ToolSpec = {

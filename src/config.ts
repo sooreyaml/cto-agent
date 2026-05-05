@@ -30,6 +30,8 @@ const envSchema = z.object({
 
   GITHUB_PAT: z.string().optional().default(""),
   GITHUB_USERNAME: z.string().optional().default(""),
+  /** Comma-separated `owner/repo` for daily brief + optional defaults for GitHub tools. */
+  GITHUB_BRIEF_REPOS: z.string().optional().default(""),
 
   GRANOLA_API_BASE: z.string().url().default("https://api.granola.ai"),
   GRANOLA_API_KEY: z.string().optional().default(""),

@@ -36,6 +36,20 @@ Slack Event Subscriptions URL: `https://<your-host>/slack/events`.
 
 Use the repo **`Dockerfile`**: image runs `node dist/index.js` and listens on **`PORT`** (default **3000**). Set environment variables in your platform (same keys as `.env.example`). Use a public **`APP_PUBLIC_URL`** for OpenRouter headers. Health check: **`GET /healthz`**. Slack **Request URL**: `https://<your-domain>/slack/events`.
 
+### Daily brief (GitHub Actions)
+
+1. Set repo secrets: **`AGENT_BASE_URL`** (no trailing slash), e.g. `https://cto-agent.example.com`, and **`CRON_SECRET`** (same value as in production `CRON_SECRET`).
+2. In production env, set **`GITHUB_BRIEF_REPOS`** to comma-separated `owner/repo` for PR/CI summary (optional but recommended).
+3. Workflow [`.github/workflows/cron-daily-brief.yml`](./.github/workflows/cron-daily-brief.yml) hits `POST /cron/daily-brief`; allow ~2 minutes for LLM + APIs (`--max-time 120`).
+
+### Notion property names
+
+Project database should use properties **`Name`** (title), **`Status`** (status), **`Deadline`** (date). Tasks database: **`Name`**, **`Due`**, **`Status`**, **`Project`** (relation to project page). Rename in Notion or adjust `P` in [`src/tools/notion.ts`](./src/tools/notion.ts).
+
+### Granola
+
+Tools call **`GET /meetings`**, **`GET /meetings/:id`**, **`GET /search`**. If your Granola API differs, change paths in [`src/tools/granola.ts`](./src/tools/granola.ts) or set **`GRANOLA_API_BASE`** to the documented root.
+
 ## Scripts
 
 | Script            | Description        |

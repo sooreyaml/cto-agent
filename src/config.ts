@@ -41,6 +41,9 @@ const envSchema = z.object({
   GRANOLA_API_KEY: z.string().optional().default(""),
 
   CRON_SECRET: z.string().optional().default(""),
+
+  /** Path to system prompt markdown (relative to cwd or absolute). Placeholder: {{CALENDAR_CONTEXT}} */
+  SYSTEM_PROMPT_PATH: z.string().default("prompts/system.md"),
 });
 
 export type Config = z.infer<typeof envSchema>;

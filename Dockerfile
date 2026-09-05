@@ -7,5 +7,7 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY prompts ./prompts
 COPY src ./src
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

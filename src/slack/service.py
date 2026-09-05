@@ -79,7 +79,18 @@ async def handle_event(body: SlackCallbackBody) -> None:
             try:
                 await slack.chat_postMessage(
                     channel=event.channel,
-                    text=f":warning: Something broke: {err}",
+                    text=f":warning: Something broke: {_public_error(err)}",
                 )
             except Exception:
                 pass
+
+
+def _public_error(err: BaseException) -> str:
+    text = str(err)
+    if "111" in text or "Connection refused" in text:
+        return (
+            "Postgres connection refused. Set DATABASE_URL to the Coolify database "
+            "*internal* URL (service hostname, port 5432). localhost inside the "
+            "container is the app itself, not Postgres."
+        )
+    return text

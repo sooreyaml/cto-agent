@@ -2,47 +2,40 @@
 
 Slack DM → FastAPI → OpenRouter (Claude) → Postgres memory.
 
-## Quick start (local)
+## Quick start
 
-1. Create a virtualenv and install deps:
+Compose starts **Postgres and the API** together. You do not need a separate Coolify/database resource.
 
-   ```bash
-   python3.12 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements/dev.txt
-   ```
-
-2. Copy env and fill secrets (especially `DATABASE_URL`):
+1. Copy env and fill Slack / OpenRouter / other secrets:
 
    ```bash
    cp .env.example .env
    ```
 
-3. Apply the schema (safe if the Drizzle tables already exist):
+2. Run:
 
    ```bash
-   alembic upgrade head
+   docker compose up --build
    ```
 
-4. Run the API:
+3. Check health: `curl -s http://localhost:8000/healthz`
 
-   ```bash
-   uvicorn src.main:app --reload --port 8000
-   ```
+The app container always uses `DATABASE_URL=postgresql://cto:…@db:5432/cto_agent` (the `db` service). That overrides any remote `DATABASE_URL` in `.env`.
 
-5. Check health: `curl -s http://localhost:8000/healthz`
+Migrations run automatically on container start (`alembic upgrade head`).
 
 Slack Event Subscriptions URL: `https://<your-host>/slack/events`.
 
 OpenAPI docs (`/docs`) are enabled in `development` and `test` only.
 
-## Deploy (e.g. Coolify)
+## Deploy (Coolify)
 
-Use the repo **`Dockerfile`**: image runs `uvicorn src.main:app` and listens on **`PORT`** (default **8000**). Set environment variables in your platform (same keys as `.env.example`). Use a public **`APP_PUBLIC_URL`** for OpenRouter headers. Health check: **`GET /healthz`**. Slack **Request URL**: `https://<your-domain>/slack/events`.
-
-This image does not need secrets at build time (`pip install` only). In Coolify **Environment Variables**, uncheck **Build Variable** / **Available at Buildtime** for every secret (`OPENROUTER_API_KEY`, Slack tokens, `NOTION_TOKEN`, Google secrets, `CRON_SECRET`, `DATABASE_URL`, etc.) and leave **Runtime** on. Optionally disable **Inject Build Args to Dockerfile** under **Advanced**. Then redeploy — that removes the `SecretsUsedInArgOrEnv` warnings and keeps keys out of image history.
-
-On first deploy of a new database, run `alembic upgrade head`. An existing database from the previous Node/Drizzle app already has the same tables — stamp the revision if needed: `alembic stamp head`.
+1. Application type: **Docker Compose** (not a lone Dockerfile). Compose file: `docker-compose.yml`.
+2. Expose the **`app`** service. Public port **8000**. Health check: **`GET /healthz`**.
+3. Set the same secrets as `.env.example` (**Runtime only**, not build-time).
+4. Set `POSTGRES_PASSWORD` to a strong value. You can **delete** any old remote `DATABASE_URL` — compose points the app at `db`.
+5. Set `APP_PUBLIC_URL` to your public HTTPS origin (no trailing slash).
+6. Slack **Request URL**: `https://<your-domain>/slack/events`.
 
 ### Daily brief (GitHub Actions)
 
@@ -60,9 +53,10 @@ Tools call **`GET /meetings`**, **`GET /meetings/:id`**, **`GET /search`**. If y
 
 ## Scripts
 
-| Command                                               | Description               |
-| ----------------------------------------------------- | ------------------------- |
-| `uvicorn src.main:app --reload --port 8000`           | Dev server                |
-| `alembic upgrade head`                                | Apply migrations          |
-| `pytest`                                              | Route and signature tests |
-| `ruff check --fix src tests && ruff format src tests` | Lint / format             |
+| Command                                               | Description                                      |
+| ----------------------------------------------------- | ------------------------------------------------ |
+| `docker compose up --build`                           | App + Postgres                                   |
+| `uvicorn src.main:app --reload --port 8000`           | API only (needs local Postgres)                  |
+| `alembic upgrade head`                                | Apply migrations (host / already run in compose) |
+| `pytest`                                              | Route and signature tests                        |
+| `ruff check --fix src tests && ruff format src tests` | Lint / format                                    |

@@ -24,7 +24,11 @@ async def run_agent(
     input_tokens = 0
     output_tokens = 0
 
-    history = await load_history(channel_id, 24)
+    try:
+        history = await load_history(channel_id, 24)
+    except Exception:
+        logger.exception("load_history failed; continuing without memory")
+        history = []
     history_len = len(history)
 
     text_part = user_message.strip() or "(User sent an image with no caption.)"

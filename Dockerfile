@@ -1,24 +1,11 @@
-FROM node:22-alpine AS deps
+FROM python:3.12-slim AS runtime
 WORKDIR /app
-RUN corepack enable
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
-FROM node:22-alpine AS build
-WORKDIR /app
-RUN corepack enable
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN pnpm build
-
-FROM node:22-alpine AS runtime
-WORKDIR /app
-ENV NODE_ENV=production
-RUN corepack enable
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/drizzle ./drizzle
-COPY --from=build /app/prompts ./prompts
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY requirements/base.txt requirements/base.txt
+RUN pip install --no-cache-dir -r requirements/base.txt
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY prompts ./prompts
+COPY src ./src
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

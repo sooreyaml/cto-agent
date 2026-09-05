@@ -1,6 +1,12 @@
 import logging
 
 from src.agent.loop import run_agent
+from src.config import get_settings
+from src.google.service import (
+    connect_message_mrkdwn,
+    is_google_connect_command,
+    oauth_is_configured,
+)
 from src.slack.client import post_channel_message, slack
 from src.slack.files import fetch_slack_image_data_urls
 from src.slack.schemas import SlackCallbackBody, SlackEvent, SlackFile
@@ -48,6 +54,24 @@ async def handle_event(body: SlackCallbackBody) -> None:
 
     image_data_urls = await fetch_slack_image_data_urls(file_dicts)
     if not user_message.strip() and not image_data_urls:
+        return
+
+    if user_message.strip() and is_google_connect_command(user_message):
+        settings = get_settings()
+        if event.user != settings.SLACK_USER_ID:
+            await post_channel_message(
+                event.channel or "",
+                "This agent can only connect Google for its configured Slack user.",
+            )
+            return
+        if not oauth_is_configured():
+            await post_channel_message(
+                event.channel or "",
+                "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and "
+                "GOOGLE_CLIENT_SECRET, then try again.",
+            )
+            return
+        await post_channel_message(event.channel or "", connect_message_mrkdwn(), mrkdwn=True)
         return
 
     try:

@@ -37,10 +37,22 @@ OpenAPI docs (`/docs`) are enabled in `development` and `test` only.
 5. Set `APP_PUBLIC_URL` to your public HTTPS origin (no trailing slash).
 6. Slack **Request URL**: `https://<your-domain>/slack/events`.
 
+### Google (Gmail + Calendar)
+
+Do not paste a refresh token into env as the main setup. Connect from Slack after deploy.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) create (or reuse) an OAuth **Web application** client. Enable **Gmail API** and **Google Calendar API**.
+2. Add authorized redirect URI: `https://<your-domain>/auth/google/callback` (must match `APP_PUBLIC_URL`).
+3. Consent screen: **Testing**, add your Google account as a test user. (Testing refresh tokens last 7 days — say `connect google` in Slack to refresh. Workspace **Internal** apps last longer.)
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. `GOOGLE_REFRESH_TOKEN` is optional leftover fallback.
+5. DM the bot `connect google`, open the link, approve access (unverified-app warning is expected: Advanced → Go to … → Allow).
+
+Tokens are stored in Postgres. If Google revokes access, the bot will ask you to connect again.
+
 ### Daily brief (GitHub Actions)
 
 1. Set repo secrets: **`AGENT_BASE_URL`** (no trailing slash), e.g. `https://cto-agent.example.com`, and **`CRON_SECRET`** (same value as in production `CRON_SECRET`).
-2. In production env, set **`GITHUB_BRIEF_REPOS`** to comma-separated `owner/repo` for PR/CI summary (optional but recommended).
+2. In production env, set **`GITHUB_PAT`** (classic `repo` scope, or a fine-grained token on **All repositories**). The brief lists recently pushed repos the token can access (last 14 days, up to 10) and summarizes open PRs plus failing CI on each default branch.
 3. Workflow [`.github/workflows/cron-daily-brief.yml`](.github/workflows/cron-daily-brief.yml) hits `POST /cron/daily-brief`; allow ~2 minutes for LLM + APIs (`--max-time 120`).
 
 ### Notion property names

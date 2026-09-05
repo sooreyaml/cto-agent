@@ -5,6 +5,7 @@ from src.config import get_settings
 from src.tools.calendar import calendar_tools
 from src.tools.github import github_tools
 from src.tools.gmail import gmail_tools
+from src.tools.google_connect import google_connect_tools
 from src.tools.granola import granola_tools
 from src.tools.notion import notion_tools
 from src.tools.slack_reminders import slack_reminder_tools
@@ -41,6 +42,7 @@ def _all_tools() -> dict[str, ToolDef]:
     return {
         **_active_notion_tools(),
         **slack_reminder_tools,
+        **google_connect_tools,
         **gmail_tools,
         **calendar_tools,
         **github_tools,

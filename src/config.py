@@ -41,7 +41,6 @@ class Settings(BaseSettings):
 
     GITHUB_PAT: str = ""
     GITHUB_USERNAME: str = ""
-    GITHUB_BRIEF_REPOS: str = ""
 
     GRANOLA_API_BASE: str = "https://api.granola.ai"
     GRANOLA_API_KEY: str = ""

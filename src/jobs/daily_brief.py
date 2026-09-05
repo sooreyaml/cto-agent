@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from src.agent.llm import MODEL, llm
 from src.config import get_settings
+from src.google.service import is_google_connected
 from src.integrations.github import github_client
 from src.integrations.google import get_calendar, get_gmail
 from src.integrations.granola import granola_request
@@ -15,6 +17,7 @@ from src.integrations.notion import get_notion
 from src.lib.notion_project_fields import extract_project_brief_fields, is_full_page
 from src.lib.notion_task_fields import map_task_row
 from src.slack.client import post_dm_to_user
+from src.tools.github import fetch_active_repos
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +56,9 @@ async def _notion() -> Any:
 
 
 def _calendar_sync() -> Any:
-    settings = get_settings()
-    if not settings.GOOGLE_REFRESH_TOKEN:
+    if not is_google_connected():
         return {"skipped": True}
+    settings = get_settings()
     cal = get_calendar()
     tz = ZoneInfo(settings.TIMEZONE)
     start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -85,8 +88,7 @@ def _calendar_sync() -> Any:
 
 
 def _gmail_sync() -> Any:
-    settings = get_settings()
-    if not settings.GOOGLE_REFRESH_TOKEN:
+    if not is_google_connected():
         return {"skipped": True}
     gmail = get_gmail()
     listed = (
@@ -122,45 +124,53 @@ def _gmail_sync() -> Any:
     return items
 
 
+async def _repo_brief(client: Any, repo: dict[str, Any]) -> dict[str, Any]:
+    owner = repo["owner"]
+    name = repo["name"]
+    entry: dict[str, Any] = {
+        "repo": repo["full_name"],
+        "pushed_at": repo.get("pushed_at"),
+        "default_branch": repo.get("default_branch"),
+    }
+    try:
+        prs = await client.get(
+            f"/repos/{owner}/{name}/pulls",
+            params={"state": "open", "per_page": 8},
+        )
+        prs.raise_for_status()
+        entry["open_prs"] = [
+            {"title": pr.get("title"), "url": pr.get("html_url")} for pr in prs.json()
+        ]
+    except Exception as err:
+        entry["open_prs_error"] = str(err)
+    try:
+        runs = await client.get(
+            f"/repos/{owner}/{name}/actions/runs",
+            params={"branch": repo.get("default_branch") or "main", "per_page": 8},
+        )
+        runs.raise_for_status()
+        failing = [
+            run
+            for run in (runs.json().get("workflow_runs") or [])
+            if run.get("conclusion") == "failure"
+        ]
+        entry["recent_failed_runs"] = [
+            {"name": run.get("name"), "url": run.get("html_url")} for run in failing[:4]
+        ]
+    except Exception as err:
+        entry["ci_error"] = str(err)
+    return entry
+
+
 async def _github() -> Any:
     settings = get_settings()
-    if not settings.GITHUB_PAT or not settings.GITHUB_BRIEF_REPOS.strip():
+    if not settings.GITHUB_PAT:
         return {"skipped": True}
-    specs = [s.strip() for s in settings.GITHUB_BRIEF_REPOS.split(",") if s.strip()]
-    out: list[dict[str, Any]] = []
     async with github_client() as client:
-        for spec in specs:
-            parts = spec.split("/")
-            if len(parts) != 2:
-                continue
-            owner, repo = parts
-            prs = await client.get(
-                f"/repos/{owner}/{repo}/pulls",
-                params={"state": "open", "per_page": 8},
-            )
-            prs.raise_for_status()
-            runs = await client.get(
-                f"/repos/{owner}/{repo}/actions/runs",
-                params={"branch": "main", "per_page": 8},
-            )
-            runs.raise_for_status()
-            failing = [
-                r
-                for r in (runs.json().get("workflow_runs") or [])
-                if r.get("conclusion") == "failure"
-            ]
-            out.append(
-                {
-                    "repo": spec,
-                    "open_prs": [
-                        {"title": p.get("title"), "url": p.get("html_url")} for p in prs.json()
-                    ],
-                    "recent_failed_runs": [
-                        {"name": r.get("name"), "url": r.get("html_url")} for r in failing[:4]
-                    ],
-                }
-            )
-    return out
+        active = await fetch_active_repos(client)
+        if not active:
+            return []
+        return list(await asyncio.gather(*[_repo_brief(client, repo) for repo in active]))
 
 
 async def _granola() -> Any:
@@ -198,7 +208,7 @@ async def run_daily_brief() -> None:
                         "Formatting rules: *bold* with single asterisks only (never **). _italic_ with underscores.",
                         "Do not use # or ## headings; start a section with a short bold line like *Today* or *Projects* then bullet lines.",
                         "For links use <https://example.com|label> only when a URL is essential; do not paste bare long URLs.",
-                        "Include sections only where you have data: *Today* (calendar), *Inbox* (Gmail), *Code* (GitHub), Notion (*Projects* or *Tasks*).",
+                        "Include sections only where you have data: *Today* (calendar), *Inbox* (Gmail), *Code* (GitHub — recently active repos), Notion (*Projects* or *Tasks*).",
                         "When notion.data exists and notion.ok: if data.source is projects, section *Projects* — name, status, priority, currentFocus, nextAction, deadline.",
                         "If data.source is tasks, section *Tasks* — name, status, due; omit empty fields.",
                         "Call out blocked or high-priority work first. Omit empty fields; keep each row to 1–3 lines.",

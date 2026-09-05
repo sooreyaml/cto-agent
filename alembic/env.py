@@ -5,8 +5,8 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from src.config import get_settings
+from src.google import models as _google_models  # noqa: F401
 from src.memory import models as _memory_models  # noqa: F401
 from src.models import Base
 

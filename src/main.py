@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -5,7 +6,9 @@ from fastapi import FastAPI
 
 from src.config import get_settings
 from src.cron.router import router as cron_router
-from src.database import database_target, engine, ping_db
+from src.database import database_target, engine, ping_db, set_main_loop
+from src.google import models as _google_models  # noqa: F401
+from src.google.router import router as google_auth_router
 from src.health.router import router as health_router
 from src.memory import models as _memory_models  # noqa: F401
 from src.slack.router import router as slack_router
@@ -19,6 +22,7 @@ logger = logging.getLogger("cto-agent")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    set_main_loop(asyncio.get_running_loop())
     logger.info("server starting env=%s postgres=%s", settings.NODE_ENV, database_target())
     try:
         await ping_db()
@@ -30,6 +34,7 @@ async def lifespan(_app: FastAPI):
             database_target(),
         )
     yield
+    set_main_loop(None)
     await engine.dispose()
 
 
@@ -46,3 +51,4 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(slack_router)
 app.include_router(cron_router)
+app.include_router(google_auth_router)

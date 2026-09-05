@@ -1,5 +1,7 @@
+import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
+from typing import TypeVar
 
 from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
@@ -12,6 +14,21 @@ settings = get_settings()
 
 engine = create_async_engine(settings.async_database_url, pool_size=10, pool_pre_ping=True)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+T = TypeVar("T")
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop | None) -> None:
+    global _main_loop
+    _main_loop = loop
+
+
+def run_from_thread(coro: Coroutine[object, object, T], timeout: float = 15) -> T:
+    loop = _main_loop
+    if loop is not None and loop.is_running():
+        return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=timeout)
+    return asyncio.run(coro)
 
 
 def database_target() -> str:

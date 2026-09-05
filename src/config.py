@@ -50,6 +50,11 @@ class Settings(BaseSettings):
 
     SYSTEM_PROMPT_PATH: str = "prompts/system.md"
 
+    @field_validator("*", mode="before")
+    @classmethod
+    def strip_strings(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
     @field_validator("OPENROUTER_BASE_URL", "GRANOLA_API_BASE")
     @classmethod
     def strip_trailing_slash(cls, value: str) -> str:

@@ -1,46 +1,48 @@
-import asyncio
 import logging
 
 from src.agent.loop import run_agent
 from src.slack.client import post_channel_message, slack
 from src.slack.files import fetch_slack_image_data_urls
-from src.slack.schemas import SlackCallbackBody, SlackFile
+from src.slack.schemas import SlackCallbackBody, SlackEvent, SlackFile
 
 logger = logging.getLogger(__name__)
-
-
-def dispatch_detached(label: str, work) -> None:
-    task = asyncio.create_task(work())
-
-    def _on_done(done: asyncio.Task) -> None:
-        if done.cancelled():
-            return
-        err = done.exception()
-        if err:
-            logger.error("background task failed label=%s", label, exc_info=err)
-
-    task.add_done_callback(_on_done)
 
 
 def _has_image_files(files: list[SlackFile]) -> bool:
     return any(f.mimetype and f.mimetype.startswith("image/") for f in files)
 
 
+def _is_direct_message(event: SlackEvent) -> bool:
+    if event.channel_type == "im":
+        return True
+    return bool(event.channel and event.channel.startswith("D"))
+
+
 async def handle_event(body: SlackCallbackBody) -> None:
     event = body.event
-    if (
-        not event
-        or event.type != "message"
-        or event.bot_id
-        or event.subtype in {"bot_message", "message_changed"}
-        or event.channel_type != "im"
-        or not event.user
-    ):
+    if not event:
+        logger.info("skip slack event: missing event object")
+        return
+    if event.type != "message":
+        logger.info("skip slack event: type=%s", event.type)
+        return
+    if event.bot_id or event.subtype in {"bot_message", "message_changed"}:
+        logger.info("skip slack event: bot/subtype=%s", event.subtype)
+        return
+    if not _is_direct_message(event):
+        logger.info(
+            "skip slack event: not a DM channel=%s channel_type=%s",
+            event.channel,
+            event.channel_type,
+        )
+        return
+    if not event.user:
+        logger.info("skip slack event: no user")
         return
 
     user_message = event.text or ""
-    file_dicts = [f.model_dump() for f in event.files]
-    may_have_images = _has_image_files(event.files)
+    file_dicts = [f.model_dump() for f in (event.files or [])]
+    may_have_images = _has_image_files(event.files or [])
     if not user_message.strip() and not may_have_images:
         return
 

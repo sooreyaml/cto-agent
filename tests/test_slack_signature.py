@@ -63,3 +63,33 @@ async def test_slack_url_verification() -> None:
         )
     assert res.status_code == 200
     assert res.json() == {"challenge": "abc"}
+
+
+@pytest.mark.asyncio
+async def test_event_callback_accepts_real_slack_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    async def fake_handle(body: object) -> None:
+        seen["body"] = body
+
+    monkeypatch.setattr("src.slack.router.handle_event", fake_handle)
+
+    ts = str(int(time.time()))
+    body = (
+        '{"type":"event_callback","event_id":"Ev123","team_id":"T1","api_app_id":"A1",'
+        '"event":{"type":"message","channel":"D012","user":"U1","text":"hello",'
+        '"ts":"1.2","channel_type":"im","files":null,"client_msg_id":"x"}}'
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post(
+            "/slack/events",
+            content=body.encode(),
+            headers={
+                "content-type": "application/json",
+                "x-slack-request-timestamp": ts,
+                "x-slack-signature": _sign(body, ts),
+            },
+        )
+    assert res.status_code == 200
+    assert res.text == "OK"
+    assert seen.get("body") is not None

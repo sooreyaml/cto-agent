@@ -40,6 +40,8 @@ OpenAPI docs (`/docs`) are enabled in `development` and `test` only.
 
 Use the repo **`Dockerfile`**: image runs `uvicorn src.main:app` and listens on **`PORT`** (default **8000**). Set environment variables in your platform (same keys as `.env.example`). Use a public **`APP_PUBLIC_URL`** for OpenRouter headers. Health check: **`GET /healthz`**. Slack **Request URL**: `https://<your-domain>/slack/events`.
 
+This image does not need secrets at build time (`pip install` only). In Coolify **Environment Variables**, uncheck **Build Variable** / **Available at Buildtime** for every secret (`OPENROUTER_API_KEY`, Slack tokens, `NOTION_TOKEN`, Google secrets, `CRON_SECRET`, `DATABASE_URL`, etc.) and leave **Runtime** on. Optionally disable **Inject Build Args to Dockerfile** under **Advanced**. Then redeploy — that removes the `SecretsUsedInArgOrEnv` warnings and keeps keys out of image history.
+
 On first deploy of a new database, run `alembic upgrade head`. An existing database from the previous Node/Drizzle app already has the same tables — stamp the revision if needed: `alembic stamp head`.
 
 ### Daily brief (GitHub Actions)

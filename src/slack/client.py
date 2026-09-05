@@ -7,7 +7,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from src.config import get_settings
 
 settings = get_settings()
-slack = AsyncWebClient(token=settings.SLACK_BOT_TOKEN)
+slack = AsyncWebClient(token=settings.SLACK_BOT_TOKEN, timeout=30)
 
 
 def split_mrkdwn_sections(body: str, max_len: int = 2800) -> list[str]:

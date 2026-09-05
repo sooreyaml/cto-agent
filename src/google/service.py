@@ -29,6 +29,12 @@ _connect_prefixes = ("please ", "can you ", "could you ", "hey ", "ok ")
 
 
 @dataclass(frozen=True)
+class ConnectTicket:
+    slack_user_id: str
+    code_verifier: str
+
+
+@dataclass(frozen=True)
 class GoogleTokenBundle:
     slack_user_id: str
     email: str | None
@@ -53,16 +59,23 @@ def _ticket_secret() -> bytes:
     return key.encode("utf-8")
 
 
+def _pkce_verifier() -> str:
+    return secrets.token_urlsafe(64).rstrip("=")
+
+
 def issue_connect_ticket(*, slack_user_id: str | None = None) -> str:
     settings = get_settings()
     user_id = slack_user_id or settings.SLACK_USER_ID
-    payload = f"{int(time.time()) + TICKET_TTL_SECONDS}:{user_id}:{secrets.token_urlsafe(12)}"
+    payload = (
+        f"{int(time.time()) + TICKET_TTL_SECONDS}:{user_id}:"
+        f"{secrets.token_urlsafe(12)}:{_pkce_verifier()}"
+    )
     sig = hmac.new(_ticket_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     raw = f"{payload}:{sig}"
     return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
 
 
-def parse_connect_ticket(ticket: str) -> str:
+def parse_connect_ticket(ticket: str) -> ConnectTicket:
     padded = ticket + "=" * (-len(ticket) % 4)
     try:
         raw = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
@@ -75,8 +88,9 @@ def parse_connect_ticket(ticket: str) -> str:
     if not hmac.compare_digest(expected, sig):
         raise GoogleOAuthInvalidTicket()
     exp_s, sep_user, rest = payload.partition(":")
-    slack_user_id, sep_nonce, _nonce = rest.partition(":")
-    if not sep_user or not sep_nonce:
+    slack_user_id, sep_nonce, rest = rest.partition(":")
+    _nonce, sep_verifier, code_verifier = rest.partition(":")
+    if not sep_user or not sep_nonce or not sep_verifier or not code_verifier:
         raise GoogleOAuthInvalidTicket()
     try:
         expires_at = int(exp_s)
@@ -86,7 +100,7 @@ def parse_connect_ticket(ticket: str) -> str:
         raise GoogleOAuthInvalidTicket()
     if slack_user_id != get_settings().SLACK_USER_ID:
         raise GoogleOAuthInvalidTicket()
-    return slack_user_id
+    return ConnectTicket(slack_user_id=slack_user_id, code_verifier=code_verifier)
 
 
 def issue_connect_url(*, slack_user_id: str | None = None) -> str:
@@ -292,18 +306,25 @@ def _client_config() -> dict[str, object]:
     }
 
 
-def authorization_url(ticket: str) -> str:
+def _oauth_flow(*, state: str | None = None, code_verifier: str | None = None):
     from google_auth_oauthlib.flow import Flow
 
-    if not oauth_is_configured():
-        raise GoogleOAuthNotConfigured()
-    parse_connect_ticket(ticket)
-    settings = get_settings()
-    flow = Flow.from_client_config(
+    return Flow.from_client_config(
         _client_config(),
         scopes=list(SCOPES),
         redirect_uri=oauth_redirect_uri(),
+        state=state,
+        autogenerate_code_verifier=False,
+        code_verifier=code_verifier,
     )
+
+
+def authorization_url(ticket: str) -> str:
+    if not oauth_is_configured():
+        raise GoogleOAuthNotConfigured()
+    parsed = parse_connect_ticket(ticket)
+    settings = get_settings()
+    flow = _oauth_flow(code_verifier=parsed.code_verifier)
     kwargs: dict[str, str] = {}
     if settings.GOOGLE_USER_EMAIL:
         kwargs["login_hint"] = settings.GOOGLE_USER_EMAIL
@@ -317,19 +338,15 @@ def authorization_url(ticket: str) -> str:
 
 
 def exchange_code(code: str, ticket: str) -> GoogleTokenBundle:
-    from google_auth_oauthlib.flow import Flow
+    import os
 
-    slack_user_id = parse_connect_ticket(ticket)
-    flow = Flow.from_client_config(
-        _client_config(),
-        scopes=list(SCOPES),
-        redirect_uri=oauth_redirect_uri(),
-        state=ticket,
-    )
+    parsed = parse_connect_ticket(ticket)
+    flow = _oauth_flow(state=ticket, code_verifier=parsed.code_verifier)
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
     flow.fetch_token(code=code)
     creds = flow.credentials
     return GoogleTokenBundle(
-        slack_user_id=slack_user_id,
+        slack_user_id=parsed.slack_user_id,
         email=_email_from_credentials(creds),
         refresh_token=creds.refresh_token or "",
         access_token=creds.token,

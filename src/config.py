@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     def strip_strings(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("OPENROUTER_BASE_URL", "GRANOLA_API_BASE")
+    @field_validator("OPENROUTER_BASE_URL", "GRANOLA_API_BASE", "APP_PUBLIC_URL")
     @classmethod
     def strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")

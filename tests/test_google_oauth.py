@@ -30,7 +30,9 @@ def test_connect_command_matches() -> None:
 
 def test_ticket_roundtrip(google_oauth_env: None) -> None:
     ticket = issue_connect_ticket()
-    assert parse_connect_ticket(ticket) == get_settings().SLACK_USER_ID
+    parsed = parse_connect_ticket(ticket)
+    assert parsed.slack_user_id == get_settings().SLACK_USER_ID
+    assert len(parsed.code_verifier) >= 43
 
 
 def test_ticket_rejects_tamper(google_oauth_env: None) -> None:
@@ -88,6 +90,11 @@ async def test_start_oauth_redirects(google_oauth_env: None) -> None:
     assert "accounts.google.com" in location
     assert "access_type=offline" in location
     assert "prompt=consent" in location
+    assert "code_challenge" in location
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client2:
+        res2 = await client2.get("/auth/google", params={"ticket": ticket}, follow_redirects=False)
+    assert res2.status_code == 302
+    assert res2.headers["location"] == location
 
 
 @pytest.mark.asyncio

@@ -1,11 +1,12 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-from src.config import get_settings
+from src.config import async_database_url_from
 from src.google import models as _google_models  # noqa: F401
 from src.memory import models as _memory_models  # noqa: F401
 from src.models import Base
@@ -14,8 +15,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.async_database_url)
+database_url = os.environ.get("DATABASE_URL", "").strip()
+if not database_url:
+    raise RuntimeError("DATABASE_URL is required to run migrations")
+config.set_main_option("sqlalchemy.url", async_database_url_from(database_url))
 target_metadata = Base.metadata
 
 

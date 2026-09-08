@@ -31,7 +31,7 @@ def test_connect_command_matches() -> None:
 def test_ticket_roundtrip(google_oauth_env: None) -> None:
     ticket = issue_connect_ticket()
     parsed = parse_connect_ticket(ticket)
-    assert parsed.slack_user_id == get_settings().SLACK_USER_ID
+    assert parsed.slack_user_id == get_settings().DISCORD_USER_ID
     assert len(parsed.code_verifier) >= 43
 
 

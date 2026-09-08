@@ -24,9 +24,8 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "anthropic/claude-sonnet-4.6"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
 
-    SLACK_BOT_TOKEN: str = Field(min_length=1)
-    SLACK_SIGNING_SECRET: str = Field(min_length=1)
-    SLACK_USER_ID: str = Field(min_length=1)
+    DISCORD_BOT_TOKEN: str = Field(min_length=1)
+    DISCORD_USER_ID: str = Field(min_length=1)
 
     NOTION_TOKEN: str = ""
     NOTION_PROJECTS_DB_ID: str = ""
@@ -67,6 +66,10 @@ class Settings(BaseSettings):
         if url.startswith("postgresql://") and "+asyncpg" not in url:
             url = "postgresql+asyncpg://" + url[len("postgresql://") :]
         return url
+
+    @property
+    def owner_user_id(self) -> str:
+        return self.DISCORD_USER_ID
 
     @property
     def docs_enabled(self) -> bool:

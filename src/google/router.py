@@ -13,7 +13,7 @@ from src.google.service import (
     upsert_google_account,
 )
 from src.integrations.google import invalidate_google_credentials
-from src.slack.client import post_dm_to_user
+from src.notify import notify_owner
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["google"])
@@ -38,7 +38,7 @@ def _page(title: str, body: str, status: int = 200) -> HTMLResponse:
     "/google",
     response_model=None,
     summary="Start Google OAuth",
-    description="Requires a short-lived ticket from Slack (Connect Google). Redirects to Google consent.",
+    description="Requires a short-lived ticket from Discord (Connect Google). Redirects to Google consent.",
     responses={
         302: {"description": "Redirect to Google"},
         401: {"description": "Missing or expired ticket"},
@@ -51,7 +51,7 @@ async def start_google_oauth(
     if not oauth_is_configured():
         return _page(
             "Google is not configured",
-            "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then say “connect google” in Slack.",
+            "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then say “connect google” in Discord.",
             503,
         )
     try:
@@ -59,13 +59,13 @@ async def start_google_oauth(
     except GoogleOAuthInvalidTicket:
         return _page(
             "Link expired",
-            "This connect link is invalid or expired. Say “connect google” in Slack for a new one.",
+            "This connect link is invalid or expired. Say “connect google” in Discord for a new one.",
             401,
         )
     except GoogleOAuthNotConfigured:
         return _page(
             "Google is not configured",
-            "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then say “connect google” in Slack.",
+            "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then say “connect google” in Discord.",
             503,
         )
     return RedirectResponse(url, status_code=302)
@@ -89,7 +89,7 @@ async def google_oauth_callback(
     if error:
         return _page(
             "Google connect cancelled",
-            "You denied access. Say “connect google” in Slack to try again.",
+            "You denied access. Say “connect google” in Discord to try again.",
             400,
         )
     if not code or not state:
@@ -99,14 +99,14 @@ async def google_oauth_callback(
     except GoogleOAuthInvalidTicket:
         return _page(
             "Link expired",
-            "This connect link is invalid or expired. Say “connect google” in Slack for a new one.",
+            "This connect link is invalid or expired. Say “connect google” in Discord for a new one.",
             401,
         )
     except Exception:
         logger.exception("Google token exchange failed")
         return _page(
             "Google connect failed",
-            "Could not exchange the authorization code. Say “connect google” in Slack and try again.",
+            "Could not exchange the authorization code. Say “connect google” in Discord and try again.",
             400,
         )
     if not bundle.refresh_token:
@@ -138,14 +138,12 @@ async def google_oauth_callback(
     invalidate_google_credentials()
     email_html = html.escape(saved.email or "your Google account")
     try:
-        await post_dm_to_user(
-            saved.slack_user_id,
-            f"*Google connected* as {saved.email or 'your account'}. Gmail and Calendar are ready.",
-            mrkdwn=True,
+        await notify_owner(
+            f"**Google connected** as {saved.email or 'your account'}. Gmail and Calendar are ready."
         )
     except Exception:
-        logger.exception("failed to DM Slack after Google connect")
+        logger.exception("failed to notify owner after Google connect")
     return _page(
         "Google connected",
-        f"Connected as <strong>{email_html}</strong>. You can close this tab and go back to Slack.",
+        f"Connected as <strong>{email_html}</strong>. You can close this tab and go back to Discord.",
     )

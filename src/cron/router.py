@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 
 from src.cron.dependencies import CronAuth
 from src.cron.schemas import CronHealthResponse, DailyBriefResponse
@@ -20,12 +20,12 @@ async def cron_health() -> dict[str, str | bool]:
     "/daily-brief",
     response_model=DailyBriefResponse,
     summary="Dispatch the daily executive brief",
-    description="Requires Authorization: Bearer $CRON_SECRET. Runs the brief job in the background.",
+    description="Requires Authorization: Bearer $CRON_SECRET. Runs the brief and DMs Discord before returning.",
     responses={
         401: {"description": "Missing or invalid cron bearer token"},
         503: {"description": "CRON_SECRET is not configured"},
     },
 )
-async def daily_brief(_auth: CronAuth, background_tasks: BackgroundTasks) -> dict[str, bool]:
-    background_tasks.add_task(run_daily_brief)
+async def daily_brief(_auth: CronAuth) -> dict[str, bool]:
+    await run_daily_brief()
     return {"ok": True, "dispatched": True}

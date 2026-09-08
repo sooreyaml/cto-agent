@@ -16,7 +16,7 @@ from src.integrations.granola import granola_request
 from src.integrations.notion import get_notion
 from src.lib.notion_project_fields import extract_project_brief_fields, is_full_page
 from src.lib.notion_task_fields import map_task_row
-from src.slack.client import post_dm_to_user
+from src.notify import notify_owner
 from src.tools.github import fetch_active_repos
 
 logger = logging.getLogger(__name__)
@@ -204,13 +204,13 @@ async def run_daily_brief() -> None:
                 "role": "system",
                 "content": " ".join(
                     [
-                        "You write a short daily executive brief for Slack using Slack mrkdwn (NOT GitHub/CommonMark).",
-                        "Formatting rules: *bold* with single asterisks only (never **). _italic_ with underscores.",
-                        "Do not use # or ## headings; start a section with a short bold line like *Today* or *Projects* then bullet lines.",
-                        "For links use <https://example.com|label> only when a URL is essential; do not paste bare long URLs.",
-                        "Include sections only where you have data: *Today* (calendar), *Inbox* (Gmail), *Code* (GitHub — recently active repos), Notion (*Projects* or *Tasks*).",
-                        "When notion.data exists and notion.ok: if data.source is projects, section *Projects* — name, status, priority, currentFocus, nextAction, deadline.",
-                        "If data.source is tasks, section *Tasks* — name, status, due; omit empty fields.",
+                        "You write a short daily executive brief for Discord using Discord markdown.",
+                        "Formatting rules: **bold**, *italic*, [label](url). Do not use Slack <url|label> links.",
+                        "Start a section with a short bold line like **Today** or **Projects** then bullet lines.",
+                        "For links use [label](https://example.com) only when a URL is essential; do not paste bare long URLs.",
+                        "Include sections only where you have data: **Today** (calendar), **Inbox** (Gmail), **Code** (GitHub — recently active repos), Notion (**Projects** or **Tasks**).",
+                        "When notion.data exists and notion.ok: if data.source is projects, section **Projects** — name, status, priority, currentFocus, nextAction, deadline.",
+                        "If data.source is tasks, section **Tasks** — name, status, due; omit empty fields.",
                         "Call out blocked or high-priority work first. Omit empty fields; keep each row to 1–3 lines.",
                         "If a source was skipped or errored, omit or one short line. Stay under ~800 words.",
                     ]
@@ -225,5 +225,5 @@ async def run_daily_brief() -> None:
     if not text:
         logger.error("daily brief: empty LLM output")
         return
-    await post_dm_to_user(settings.SLACK_USER_ID, text, mrkdwn=True)
+    await notify_owner(text)
     logger.info("daily brief sent")

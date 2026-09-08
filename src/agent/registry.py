@@ -8,7 +8,6 @@ from src.tools.gmail import gmail_tools
 from src.tools.google_connect import google_connect_tools
 from src.tools.granola import granola_tools
 from src.tools.notion import notion_tools
-from src.tools.slack_reminders import slack_reminder_tools
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
 ToolDef = dict[str, Any]
@@ -41,7 +40,6 @@ def _active_notion_tools() -> dict[str, ToolDef]:
 def _all_tools() -> dict[str, ToolDef]:
     return {
         **_active_notion_tools(),
-        **slack_reminder_tools,
         **google_connect_tools,
         **gmail_tools,
         **calendar_tools,

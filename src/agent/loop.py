@@ -18,6 +18,7 @@ async def run_agent(
     slack_user_id: str,
     user_message: str,
     image_data_urls: list[str] | None = None,
+    surface: str = "discord",
 ) -> dict[str, Any]:
     started_at = time.monotonic()
     tools_used: list[str] = []
@@ -44,7 +45,7 @@ async def run_agent(
         user_msg = {"role": "user", "content": user_message}
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_system_prompt()},
+        {"role": "system", "content": build_system_prompt(surface=surface)},
         *history,
         user_msg,
     ]

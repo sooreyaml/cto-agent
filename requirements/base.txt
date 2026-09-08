@@ -9,7 +9,6 @@ httpx>=0.27
 openai>=1.60
 discord.py>=2.4
 aiohttp>=3.10
-notion-client>=2.2
 google-api-python-client>=2.150
 google-auth>=2.35
 google-auth-httplib2>=0.2

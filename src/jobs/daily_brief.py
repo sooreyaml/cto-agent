@@ -9,15 +9,14 @@ from fastapi.concurrency import run_in_threadpool
 
 from src.agent.llm import MODEL, llm
 from src.config import get_settings
-from src.google.service import is_google_connected
+from src.connections.repository import resolve_token
+from src.google.service import is_google_connected, list_accounts_sync
 from src.integrations.github import github_client
 from src.integrations.google import get_calendar, get_gmail
 from src.integrations.granola import granola_request
-from src.integrations.notion import get_notion
-from src.lib.notion_project_fields import extract_project_brief_fields, is_full_page
-from src.lib.notion_task_fields import map_task_row
 from src.notify import notify_owner
 from src.tools.github import fetch_active_repos
+from src.work.repository import brief_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -31,35 +30,27 @@ async def _safe(label: str, fn) -> dict[str, Any]:
         return {"ok": False, "error": str(err)}
 
 
-async def _notion() -> Any:
-    settings = get_settings()
-    if not settings.NOTION_TOKEN:
-        return {"skipped": True}
-    notion = get_notion()
-    if settings.NOTION_PROJECTS_DB_ID:
-        res = await notion.databases.query(
-            database_id=settings.NOTION_PROJECTS_DB_ID,
-            page_size=25,
-        )
-        rows = [
-            extract_project_brief_fields(r) for r in res.get("results") or [] if is_full_page(r)
-        ]
-        return {"source": "projects", "rows": rows}
-    if settings.NOTION_TASKS_DB_ID:
-        res = await notion.databases.query(
-            database_id=settings.NOTION_TASKS_DB_ID,
-            page_size=40,
-        )
-        rows = [map_task_row(r) for r in res.get("results") or [] if is_full_page(r)]
-        return {"source": "tasks", "rows": rows}
-    return {"skipped": True}
+async def _work() -> Any:
+    return await brief_bundle()
 
 
-def _calendar_sync() -> Any:
-    if not is_google_connected():
-        return {"skipped": True}
+def _google_account_keys() -> list[str | None]:
+    accounts = list_accounts_sync()
+    keys = [
+        str(item.get("email") or item.get("id"))
+        for item in accounts
+        if item.get("email") or item.get("id")
+    ]
+    if keys:
+        return keys
+    if is_google_connected():
+        return [None]
+    return []
+
+
+def _calendar_for(account: str | None) -> list[dict[str, Any]]:
     settings = get_settings()
-    cal = get_calendar()
+    cal = get_calendar(account)
     tz = ZoneInfo(settings.TIMEZONE)
     start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
@@ -87,10 +78,8 @@ def _calendar_sync() -> Any:
     ]
 
 
-def _gmail_sync() -> Any:
-    if not is_google_connected():
-        return {"skipped": True}
-    gmail = get_gmail()
+def _gmail_for(account: str | None) -> list[dict[str, Any]]:
+    gmail = get_gmail(account)
     listed = (
         gmail.users()
         .messages()
@@ -122,6 +111,20 @@ def _gmail_sync() -> Any:
         )
         items.append({"subject": subject, "from": sender, "snippet": msg.get("snippet")})
     return items
+
+
+def _calendar_sync() -> Any:
+    keys = _google_account_keys()
+    if not keys:
+        return {"skipped": True}
+    return [{"account": key or "default", "events": _calendar_for(key)} for key in keys]
+
+
+def _gmail_sync() -> Any:
+    keys = _google_account_keys()
+    if not keys:
+        return {"skipped": True}
+    return [{"account": key or "default", "messages": _gmail_for(key)} for key in keys]
 
 
 async def _repo_brief(client: Any, repo: dict[str, Any]) -> dict[str, Any]:
@@ -163,8 +166,7 @@ async def _repo_brief(client: Any, repo: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _github() -> Any:
-    settings = get_settings()
-    if not settings.GITHUB_PAT:
+    if not await resolve_token("github"):
         return {"skipped": True}
     async with github_client() as client:
         active = await fetch_active_repos(client)
@@ -174,14 +176,14 @@ async def _github() -> Any:
 
 
 async def _granola() -> Any:
-    if not get_settings().GRANOLA_API_KEY:
+    if not await resolve_token("granola"):
         return {"skipped": True}
     return await granola_request("/meetings?limit=5")
 
 
 async def run_daily_brief() -> None:
     settings = get_settings()
-    notion_part = await _safe("notion", _notion)
+    work_part = await _safe("work", _work)
     calendar_part = await _safe("calendar", lambda: run_in_threadpool(_calendar_sync))
     gmail_part = await _safe("gmail", lambda: run_in_threadpool(_gmail_sync))
     github_part = await _safe("github", _github)
@@ -190,7 +192,7 @@ async def run_daily_brief() -> None:
     bundle = {
         "date": datetime.now(UTC).isoformat(),
         "timezone": settings.TIMEZONE,
-        "notion": notion_part,
+        "work": work_part,
         "calendar": calendar_part,
         "gmail": gmail_part,
         "github": github_part,
@@ -206,11 +208,11 @@ async def run_daily_brief() -> None:
                     [
                         "You write a short daily executive brief for Discord using Discord markdown.",
                         "Formatting rules: **bold**, *italic*, [label](url). Do not use Slack <url|label> links.",
-                        "Start a section with a short bold line like **Today** or **Projects** then bullet lines.",
+                        "Start a section with a short bold line like **Today** or **Priorities** then bullet lines.",
                         "For links use [label](https://example.com) only when a URL is essential; do not paste bare long URLs.",
-                        "Include sections only where you have data: **Today** (calendar), **Inbox** (Gmail), **Code** (GitHub — recently active repos), Notion (**Projects** or **Tasks**).",
-                        "When notion.data exists and notion.ok: if data.source is projects, section **Projects** — name, status, priority, currentFocus, nextAction, deadline.",
-                        "If data.source is tasks, section **Tasks** — name, status, due; omit empty fields.",
+                        "Include sections only where you have data: **Today** (calendar), **Inbox** (Gmail), **Code** (GitHub — recently active repos), **Priorities**, **Tasks**, **Commitments**.",
+                        "Calendar and Gmail data may be a list of {account, events|messages}. Label the account when more than one is present.",
+                        "When work.data exists and work.ok: **Priorities** (rank, title, notes); **Tasks** (blocked and overdue first — title, status, due, project); **Commitments** (who, what, due).",
                         "Call out blocked or high-priority work first. Omit empty fields; keep each row to 1–3 lines.",
                         "If a source was skipped or errored, omit or one short line. Stay under ~800 words.",
                     ]

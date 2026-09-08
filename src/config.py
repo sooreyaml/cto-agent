@@ -36,17 +36,13 @@ class Settings(BaseSettings):
     DISCORD_BOT_TOKEN: str = Field(min_length=1)
     DISCORD_USER_ID: str = Field(min_length=1)
 
-    NOTION_TOKEN: str = ""
-    NOTION_PROJECTS_DB_ID: str = ""
-    NOTION_TASKS_DB_ID: str = ""
-    NOTION_LOGS_DB_ID: str = ""
-    NOTION_STATUS_PROPERTY_KIND: Literal["select", "status"] = "status"
-
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REFRESH_TOKEN: str = ""
     GOOGLE_USER_EMAIL: str = ""
 
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
     GITHUB_PAT: str = ""
     GITHUB_USERNAME: str = ""
 

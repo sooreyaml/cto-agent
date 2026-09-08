@@ -27,9 +27,12 @@ def test_splits_long_messages() -> None:
 
 
 def test_system_prompt_is_discord() -> None:
-    prompt = build_system_prompt()
+    prompt = build_system_prompt(work_context="Work board:\n- P1: Ship")
     assert "Discord" in prompt
     assert "Slack mrkdwn" not in prompt
+    assert "Notion" not in prompt
+    assert "P1: Ship" in prompt
+    assert "work_list" in prompt or "Work:" in prompt
 
 
 def test_discord_user_required(monkeypatch: pytest.MonkeyPatch) -> None:

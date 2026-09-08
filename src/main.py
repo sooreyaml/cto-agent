@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.config import get_settings
+from src.connections import models as _connections_models  # noqa: F401
+from src.connections.router import router as connections_auth_router
 from src.cron.router import router as cron_router
 from src.database import database_target, engine, ping_db, set_main_loop
 from src.discord.client import start_discord_bot, stop_discord_bot
@@ -12,6 +14,7 @@ from src.google import models as _google_models  # noqa: F401
 from src.google.router import router as google_auth_router
 from src.health.router import router as health_router
 from src.memory import models as _memory_models  # noqa: F401
+from src.work import models as _work_models  # noqa: F401
 
 settings = get_settings()
 logging.basicConfig(
@@ -53,3 +56,4 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(cron_router)
 app.include_router(google_auth_router)
+app.include_router(connections_auth_router)

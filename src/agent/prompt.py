@@ -7,12 +7,13 @@ from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 CALENDAR_PLACEHOLDER = "{{CALENDAR_CONTEXT}}"
+WORK_PLACEHOLDER = "{{WORK_CONTEXT}}"
 
 
 def current_calendar_context() -> str:
     settings = get_settings()
     now = datetime.now(ZoneInfo(settings.TIMEZONE))
-    long = now.strftime(f"%A, {now.day} %B %Y")
+    long = now.strftime(f"%A, {now.day} %B {now.year}")
     iso = now.strftime("%Y-%m-%d")
     return (
         f"Today (authoritative for this chat turn, {settings.TIMEZONE}) is {long} "
@@ -26,14 +27,16 @@ def fallback_system_template() -> str:
         [
             "You are CTO Agent, a concise technical chief-of-staff assistant in Discord.",
             CALENDAR_PLACEHOLDER,
+            WORK_PLACEHOLDER,
             "Prefer short answers; use bullets when listing items.",
             "Formatting: this text is shown in Discord. Use **bold**, *italic*, and [label](url).",
             "Do not use Slack <url|label> links.",
-            "Notion: use notion_describe_tasks_database to list allowed Status option names; use notion_search_tasks / notion_create_task / notion_update_task for tasks (NOTION_TASKS_DB_ID). If project tools exist, they use a separate projects database.",
-            "GitHub: github_list_repos lists repos the token can access (recently pushed first; active_days keeps only recent ones). github_search_issues searches PRs/issues across all of them (e.g. is:pr is:open involves:@me). Per-repo tools need owner and repo.",
-            "Google: Gmail and Calendar need a connected Google account. If they fail or the user asks to connect, use google_connect_link and send discord_markdown or [Open Google sign-in](connect_url). The user can also say connect google in this DM.",
-            "Use tools when the user asks for live data. For destructive actions (send email, delete calendar events) require explicit confirmation first.",
-            "If a tool is not configured, say so briefly and proceed with what you can.",
+            "Work: use work_list / work_create / work_update for priorities, tasks, decisions, commitments.",
+            "GitHub: github_list_repos lists repos the token can access (recently pushed first; active_days keeps only recent ones). github_search_issues searches PRs/issues across all of them (e.g. is:pr is:open involves:@me). Per-repo tools need owner and repo. Writes: github_create_issue, github_add_comment, github_merge_pull_request (merge only after explicit confirmation).",
+            "Google: multiple accounts are supported. Use google_connect_link to add another; google_manage_account to list/label/default/disconnect. Gmail and Calendar take optional account (email or label).",
+            "Connections: never tell the user to edit .env. Google, GitHub, and Granola use browser OAuth — connections_connect, or they say connect github / connect granola / connect google. Other tools: paste a key, then connections_save. Use connections_request for APIs without a native tool.",
+            "Use tools when the user asks for live data. For destructive actions (send email, delete calendar events, merge a PR) require explicit confirmation first.",
+            "If a tool is not connected, send the OAuth link (Google/GitHub/Granola) or ask for a key; do not mention .env.",
             "The user may attach images; describe what you see and use that context in your answer.",
         ]
     )
@@ -50,9 +53,16 @@ def load_system_template() -> str:
         return fallback_system_template()
 
 
-def build_system_prompt(*, surface: str = "discord") -> str:
+def build_system_prompt(*, surface: str = "discord", work_context: str = "") -> str:
     template = load_system_template()
     calendar = current_calendar_context()
+    work = work_context.strip() or "Work board: (empty or unavailable)."
     if CALENDAR_PLACEHOLDER in template:
-        return template.replace(CALENDAR_PLACEHOLDER, calendar).strip()
-    return f"{template.strip()}\n\n{calendar}".strip()
+        text = template.replace(CALENDAR_PLACEHOLDER, calendar)
+    else:
+        text = f"{template.strip()}\n\n{calendar}"
+    if WORK_PLACEHOLDER in text:
+        text = text.replace(WORK_PLACEHOLDER, work)
+    else:
+        text = f"{text.strip()}\n\n{work}"
+    return text.strip()

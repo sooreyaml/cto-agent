@@ -7,9 +7,11 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from src.config import async_database_url_from
+from src.connections import models as _connections_models  # noqa: F401
 from src.google import models as _google_models  # noqa: F401
 from src.memory import models as _memory_models  # noqa: F401
 from src.models import Base
+from src.work import models as _work_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

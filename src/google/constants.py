@@ -24,5 +24,9 @@ CONNECT_COMMANDS = frozenset(
         "reconnect gmail",
         "connect calendar",
         "link gmail",
+        "add google",
+        "add google account",
+        "connect another google",
+        "connect another google account",
     }
 )

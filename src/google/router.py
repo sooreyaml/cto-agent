@@ -110,7 +110,7 @@ async def google_oauth_callback(
             400,
         )
     if not bundle.refresh_token:
-        existing = await load_account(bundle.slack_user_id)
+        existing = await load_account(account=bundle.email)
         if existing is None:
             return _page(
                 "Google connect failed",
@@ -138,8 +138,12 @@ async def google_oauth_callback(
     invalidate_google_credentials()
     email_html = html.escape(saved.email or "your Google account")
     try:
+        extra = f" ({saved.label})" if saved.label else ""
+        default = " — set as default" if saved.is_default else ""
         await notify_owner(
-            f"**Google connected** as {saved.email or 'your account'}. Gmail and Calendar are ready."
+            f"**Google connected** as {saved.email or 'your account'}{extra}{default}. "
+            "Say `connect google` again to add another account. "
+            "Gmail and Calendar tools take an optional `account` (email or label)."
         )
     except Exception:
         logger.exception("failed to notify owner after Google connect")

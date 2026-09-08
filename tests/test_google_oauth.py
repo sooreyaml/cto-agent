@@ -25,6 +25,7 @@ def test_connect_command_matches() -> None:
     assert is_google_connect_command("connect google")
     assert is_google_connect_command("Please reconnect Google!")
     assert is_google_connect_command("link gmail")
+    assert is_google_connect_command("add google account")
     assert not is_google_connect_command("what's on my calendar")
 
 
@@ -90,6 +91,7 @@ async def test_start_oauth_redirects(google_oauth_env: None) -> None:
     assert "accounts.google.com" in location
     assert "access_type=offline" in location
     assert "prompt=consent" in location
+    assert "select_account" in location
     assert "code_challenge" in location
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client2:
         res2 = await client2.get("/auth/google", params={"ticket": ticket}, follow_redirects=False)

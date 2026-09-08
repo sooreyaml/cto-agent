@@ -54,25 +54,38 @@ Do not paste a refresh token into env as the main setup. Connect from Discord af
 3. Consent screen: **Testing**, add your Google account as a test user. (Testing refresh tokens last 7 days — say `connect google` in Discord to refresh. Workspace **Internal** apps last longer.)
 4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. `GOOGLE_REFRESH_TOKEN` is optional leftover fallback.
 5. DM the bot `connect google`, open the link, approve access (unverified-app warning is expected: Advanced → Go to … → Allow).
+6. Say `connect google` again to add another account (work + personal). Google will ask which account. Optional: ask the agent to label it (`work`, `personal`) or set the default. Gmail/Calendar tools take an `account` email or label.
 
-Tokens are stored in Postgres. If you previously connected via Slack, the existing row is reused. If Google revokes access, the bot will ask you to connect again.
+Tokens are stored in Postgres (one row per Google email). If Google revokes access, that account is dropped and the bot will ask you to connect again.
 
 ### Daily brief (GitHub Actions)
 
 The brief is DMed on Discord. The cron endpoint runs the job **inline** (not in a background task) so a failed send fails the workflow.
 
 1. Set repo secrets: **`AGENT_BASE_URL`** (no trailing slash), e.g. `https://cto-agent.example.com`, and **`CRON_SECRET`** (same value as in production `CRON_SECRET`).
-2. In production env, set **`GITHUB_PAT`** (classic `repo` scope, or a fine-grained token on **All repositories**). The brief lists recently pushed repos the token can access (last 14 days, up to 10) and summarizes open PRs plus failing CI on each default branch.
+2. Connect GitHub from Discord (`connect github`) after setting **`GITHUB_CLIENT_ID`** and **`GITHUB_CLIENT_SECRET`** (GitHub OAuth App, callback `{APP_PUBLIC_URL}/auth/github/callback`). The brief lists recently pushed repos the token can access (last 14 days, up to 10) and summarizes open PRs plus failing CI on each default branch. `GITHUB_PAT` is optional leftover.
 3. Workflow [`.github/workflows/cron-daily-brief.yml`](.github/workflows/cron-daily-brief.yml) hits `POST /cron/daily-brief`; allow ~2 minutes for LLM + APIs (`--max-time 120`).
 4. Confirm the API log shows `discord connected` after deploy. A brief cannot DM you if the Gateway bot is down.
 
-### Notion property names
+### Work board
 
-Project database: **`Name`** (title), **`Status`** (status), **`Deadline`** (date), **`Priority`** (select, status, number, or text), **`Current focus`** (rich text), **`Next action`** (rich text). Names are defined in [`src/lib/notion_project_fields.py`](src/lib/notion_project_fields.py). Tasks database: **`Name`**, **`Due`**, **`Status`**, **`Project`** (relation).
+Priorities, tasks, decisions, and commitments live in Postgres. The agent mutates them with `work_list` / `work_create` / `work_update`. At most five open priorities. The daily brief includes **Priorities**, **Tasks**, and **Commitments**.
+
+Reminders: say when to nudge; `POST /cron/due` DMs due reminders and commitment `remind_at` times. CI watch: `POST /cron/watch` DMs new GitHub Actions failures on recently pushed repos.
+
+Workflow [`.github/workflows/cron-due-watch.yml`](.github/workflows/cron-due-watch.yml) hits both endpoints every 15 minutes.
+
+### GitHub
+
+1. Create a GitHub OAuth App (Developer settings → OAuth Apps). Callback: `https://<your-domain>/auth/github/callback`.
+2. Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+3. DM the bot `connect github`, open the link, approve access.
+
+The user token is stored in Postgres. Scopes: `repo`, `read:user`, `workflow`.
 
 ### Granola
 
-Tools call **`GET /meetings`**, **`GET /meetings/:id`**, **`GET /search`**. If your Granola API differs, change paths in [`src/tools/granola.py`](src/tools/granola.py) or set **`GRANOLA_API_BASE`** to the documented root.
+DM the bot `connect granola` and sign in in the browser. Granola MCP uses OAuth with dynamic client registration — no API key and no extra env vars. Tools list, fetch, and search meetings through MCP. Optional leftover: `GRANOLA_API_KEY` / `GRANOLA_API_BASE` if you still want the REST API as a fallback.
 
 ## Scripts
 

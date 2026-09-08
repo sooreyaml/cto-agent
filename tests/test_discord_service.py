@@ -115,9 +115,9 @@ async def test_strips_mention_in_guild(discord_owner: str, monkeypatch: pytest.M
 
 @pytest.mark.asyncio
 async def test_google_connect_command(discord_owner: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("src.discord.service.oauth_is_configured", lambda: True)
+    monkeypatch.setattr("src.discord.service.google_oauth_is_configured", lambda: True)
     monkeypatch.setattr(
-        "src.discord.service.connect_message_markdown",
+        "src.discord.service.google_connect_message",
         lambda: "Connect link",
     )
     called = {"agent": False}
@@ -130,4 +130,43 @@ async def test_google_connect_command(discord_owner: str, monkeypatch: pytest.Mo
     message = FakeMessage(content="connect google")
     await handle_message(message, bot_user_id=9)
     assert message.channel.sent == ["Connect link"]
+    assert called["agent"] is False
+
+
+@pytest.mark.asyncio
+async def test_github_connect_command(discord_owner: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.discord.service.github_oauth_is_configured", lambda: True)
+    monkeypatch.setattr(
+        "src.discord.service.github_connect_message",
+        lambda: "GitHub link",
+    )
+    called = {"agent": False}
+
+    async def fake_agent(**kwargs: object) -> dict[str, object]:
+        called["agent"] = True
+        return {"text": "nope"}
+
+    monkeypatch.setattr("src.discord.service.run_agent", fake_agent)
+    message = FakeMessage(content="connect github")
+    await handle_message(message, bot_user_id=9)
+    assert message.channel.sent == ["GitHub link"]
+    assert called["agent"] is False
+
+
+@pytest.mark.asyncio
+async def test_granola_connect_command(discord_owner: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.discord.service.granola_connect_message",
+        lambda: "Granola link",
+    )
+    called = {"agent": False}
+
+    async def fake_agent(**kwargs: object) -> dict[str, object]:
+        called["agent"] = True
+        return {"text": "nope"}
+
+    monkeypatch.setattr("src.discord.service.run_agent", fake_agent)
+    message = FakeMessage(content="connect granola")
+    await handle_message(message, bot_user_id=9)
+    assert message.channel.sent == ["Granola link"]
     assert called["agent"] is False

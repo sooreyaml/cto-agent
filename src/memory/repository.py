@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.connections.redact import redact_obj, redact_secrets
 from src.database import async_session_factory
 from src.memory.models import Conversation, Log, Message
 
@@ -182,6 +183,10 @@ async def persist_turn(
     success: bool = True,
     error_message: str | None = None,
 ) -> None:
+    user_message = redact_secrets(user_message)
+    final_text = redact_secrets(final_text)
+    if error_message:
+        error_message = redact_secrets(error_message)
     async with async_session_factory() as session:
         conv = await _ensure_conversation(session, channel_id, slack_user_id)
         tail = messages[1 + history_len :]
@@ -192,7 +197,9 @@ async def persist_turn(
         for msg in tail:
             if msg.get("role") == "system":
                 continue
-            session.add(message_to_insert(conv.id, msg, seq))
+            redacted = redact_obj(msg)
+            payload = redacted if isinstance(redacted, dict) else msg
+            session.add(message_to_insert(conv.id, payload, seq))
             seq += 1
         session.add(
             Log(

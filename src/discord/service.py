@@ -5,13 +5,18 @@ from typing import Any
 
 from src.agent.loop import run_agent
 from src.config import get_settings
+from src.connections.commands import match_connect_command
+from src.connections.github_oauth import (
+    connect_message_markdown as github_connect_message,
+)
+from src.connections.github_oauth import oauth_is_configured as github_oauth_is_configured
+from src.connections.granola_oauth import connect_message_markdown as granola_connect_message
 from src.discord.files import fetch_discord_image_data_urls
 from src.discord.format import split_discord_sections
 from src.google.service import (
-    connect_message_markdown,
-    is_google_connect_command,
-    oauth_is_configured,
+    connect_message_markdown as google_connect_message,
 )
+from src.google.service import oauth_is_configured as google_oauth_is_configured
 
 logger = logging.getLogger(__name__)
 
@@ -89,15 +94,31 @@ async def handle_message(message: Any, *, bot_user_id: int) -> None:
     if not user_message and not image_data_urls:
         return
 
-    if user_message and is_google_connect_command(user_message):
-        if not oauth_is_configured():
-            await channel.send(
-                "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and "
-                "GOOGLE_CLIENT_SECRET, then try again."
-            )
+    if user_message:
+        connect = match_connect_command(user_message)
+        if connect == "google":
+            if not google_oauth_is_configured():
+                await channel.send(
+                    "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and "
+                    "GOOGLE_CLIENT_SECRET, then try again."
+                )
+                return
+            await channel.send(google_connect_message())
             return
-        await channel.send(connect_message_markdown())
-        return
+        if connect == "github":
+            if not github_oauth_is_configured():
+                await channel.send(
+                    "GitHub OAuth is not configured. Create a GitHub OAuth App, set "
+                    "GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, add callback "
+                    f"{settings.APP_PUBLIC_URL.rstrip('/')}/auth/github/callback, "
+                    "then try again."
+                )
+                return
+            await channel.send(github_connect_message())
+            return
+        if connect == "granola":
+            await channel.send(granola_connect_message())
+            return
 
     try:
         await message.add_reaction("👀")

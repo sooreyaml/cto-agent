@@ -12,8 +12,16 @@ def _tz() -> str:
     return get_settings().TIMEZONE or "UTC"
 
 
-def _list_sync(time_min: str, time_max: str, max_results: int) -> list[dict[str, Any]]:
-    cal = get_calendar()
+def _account(args: dict[str, Any]) -> str | None:
+    raw = args.get("account")
+    text = str(raw).strip() if raw is not None else ""
+    return text or None
+
+
+def _list_sync(
+    time_min: str, time_max: str, max_results: int, account: str | None = None
+) -> list[dict[str, Any]]:
+    cal = get_calendar(account)
     res = (
         cal.events()
         .list(
@@ -41,8 +49,8 @@ def _list_sync(time_min: str, time_max: str, max_results: int) -> list[dict[str,
     ]
 
 
-def _get_sync(event_id: str) -> dict[str, Any]:
-    cal = get_calendar()
+def _get_sync(event_id: str, account: str | None = None) -> dict[str, Any]:
+    cal = get_calendar(account)
     event = cal.events().get(calendarId=PRIMARY, eventId=event_id).execute()
     return {
         "id": event.get("id"),
@@ -60,9 +68,13 @@ def _get_sync(event_id: str) -> dict[str, Any]:
 
 
 def _create_sync(
-    summary: str, start_iso: str, end_iso: str, description: str | None
+    summary: str,
+    start_iso: str,
+    end_iso: str,
+    description: str | None,
+    account: str | None = None,
 ) -> dict[str, Any]:
-    cal = get_calendar()
+    cal = get_calendar(account)
     created = (
         cal.events()
         .insert(
@@ -85,7 +97,7 @@ def _create_sync(
 
 
 def _update_sync(args: dict[str, Any]) -> dict[str, Any]:
-    cal = get_calendar()
+    cal = get_calendar(_account(args))
     body = cal.events().get(calendarId=PRIMARY, eventId=args["event_id"]).execute()
     if "summary" in args:
         body["summary"] = args["summary"]
@@ -110,8 +122,8 @@ def _update_sync(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _delete_sync(event_id: str) -> dict[str, Any]:
-    cal = get_calendar()
+def _delete_sync(event_id: str, account: str | None = None) -> dict[str, Any]:
+    cal = get_calendar(account)
     cal.events().delete(calendarId=PRIMARY, eventId=event_id).execute()
     return {"deleted": True, "event_id": event_id}
 
@@ -122,11 +134,12 @@ async def _list_events(args: dict[str, Any]) -> list[dict[str, Any]]:
         args["time_min"],
         args["time_max"],
         min(args.get("max_results") or 50, 250),
+        _account(args),
     )
 
 
 async def _get_event(args: dict[str, Any]) -> dict[str, Any]:
-    return await run_in_threadpool(_get_sync, args["event_id"])
+    return await run_in_threadpool(_get_sync, args["event_id"], _account(args))
 
 
 async def _create_event(args: dict[str, Any]) -> dict[str, Any]:
@@ -136,6 +149,7 @@ async def _create_event(args: dict[str, Any]) -> dict[str, Any]:
         args["start_iso"],
         args["end_iso"],
         args.get("description"),
+        _account(args),
     )
 
 
@@ -144,7 +158,7 @@ async def _update_event(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _delete_event(args: dict[str, Any]) -> dict[str, Any]:
-    return await run_in_threadpool(_delete_sync, args["event_id"])
+    return await run_in_threadpool(_delete_sync, args["event_id"], _account(args))
 
 
 calendar_tools = {
@@ -160,6 +174,10 @@ calendar_tools = {
                         "time_min": {"type": "string", "description": "ISO 8601 start"},
                         "time_max": {"type": "string", "description": "ISO 8601 end"},
                         "max_results": {"type": "integer"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
                     },
                     "required": ["time_min", "time_max"],
                 },
@@ -175,7 +193,13 @@ calendar_tools = {
                 "description": "Get one calendar event by id.",
                 "parameters": {
                     "type": "object",
-                    "properties": {"event_id": {"type": "string"}},
+                    "properties": {
+                        "event_id": {"type": "string"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
+                    },
                     "required": ["event_id"],
                 },
             },
@@ -195,6 +219,10 @@ calendar_tools = {
                         "start_iso": {"type": "string", "description": "ISO start datetime"},
                         "end_iso": {"type": "string", "description": "ISO end datetime"},
                         "description": {"type": "string"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
                     },
                     "required": ["summary", "start_iso", "end_iso"],
                 },
@@ -216,6 +244,10 @@ calendar_tools = {
                         "start_iso": {"type": "string"},
                         "end_iso": {"type": "string"},
                         "description": {"type": "string"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
                     },
                     "required": ["event_id"],
                 },
@@ -231,7 +263,13 @@ calendar_tools = {
                 "description": "Delete a calendar event permanently.",
                 "parameters": {
                     "type": "object",
-                    "properties": {"event_id": {"type": "string"}},
+                    "properties": {
+                        "event_id": {"type": "string"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
+                    },
                     "required": ["event_id"],
                 },
             },

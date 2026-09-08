@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from src.config import get_settings
+from src.connections.repository import resolve_extra
 from src.exceptions import ConfigError
 from src.integrations.github import github_client
 
@@ -14,15 +15,26 @@ _REPO_SORTS = frozenset({"created", "updated", "pushed", "full_name"})
 _SEARCH_SORTS = frozenset({"comments", "reactions", "created", "updated"})
 
 
-def parse_repo(owner: str | None, repo: str | None) -> tuple[str, str]:
+def parse_repo(
+    owner: str | None,
+    repo: str | None,
+    *,
+    username: str | None = None,
+) -> tuple[str, str]:
     settings = get_settings()
     o = (owner or "").strip()
     r = (repo or "").strip()
     if o and r:
         return o, r
-    if settings.GITHUB_USERNAME and r:
-        return settings.GITHUB_USERNAME, r
+    login = (username or settings.GITHUB_USERNAME or "").strip()
+    if login and r:
+        return login, r
     raise ConfigError("Provide owner and repo")
+
+
+async def resolve_repo(owner: str | None, repo: str | None) -> tuple[str, str]:
+    extra = await resolve_extra("github")
+    return parse_repo(owner, repo, username=str(extra.get("username") or "") or None)
 
 
 def parse_github_datetime(value: str | None) -> datetime | None:
@@ -204,7 +216,7 @@ async def _search_issues(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _list_prs(args: dict[str, Any]) -> list[dict[str, Any]]:
-    owner, repo = parse_repo(args.get("owner"), args.get("repo"))
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
     async with github_client() as client:
         res = await client.get(
             f"/repos/{owner}/{repo}/pulls",
@@ -231,7 +243,7 @@ async def _list_prs(args: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 async def _branch_ci(args: dict[str, Any]) -> list[dict[str, Any]]:
-    owner, repo = parse_repo(args.get("owner"), args.get("repo"))
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
     branch = args.get("branch") or "main"
     async with github_client() as client:
         res = await client.get(
@@ -259,7 +271,7 @@ async def _branch_ci(args: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 async def _readme(args: dict[str, Any]) -> dict[str, Any]:
-    owner, repo = parse_repo(args.get("owner"), args.get("repo"))
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
     async with github_client() as client:
         res = await client.get(
             f"/repos/{owner}/{repo}/readme",
@@ -270,7 +282,7 @@ async def _readme(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _open_issues(args: dict[str, Any]) -> list[dict[str, Any]]:
-    owner, repo = parse_repo(args.get("owner"), args.get("repo"))
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
     async with github_client() as client:
         res = await client.get(
             f"/repos/{owner}/{repo}/issues",
@@ -296,7 +308,7 @@ async def _open_issues(args: dict[str, Any]) -> list[dict[str, Any]]:
 async def _path_contents(args: dict[str, Any]) -> dict[str, Any]:
     import base64
 
-    owner, repo = parse_repo(args.get("owner"), args.get("repo"))
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
     params = {}
     if args.get("ref"):
         params["ref"] = args["ref"]
@@ -321,6 +333,96 @@ async def _path_contents(args: dict[str, Any]) -> dict[str, Any]:
             "sha": data.get("sha"),
             "content": buf.decode("utf-8", errors="replace")[:12000],
             "truncated": len(buf) > 12000,
+        }
+
+
+def issue_create_body(args: dict[str, Any]) -> dict[str, Any]:
+    title = (args.get("title") or "").strip()
+    if not title:
+        raise ConfigError("title is required")
+    body: dict[str, Any] = {"title": title}
+    if args.get("body"):
+        body["body"] = str(args["body"])
+    labels = args.get("labels")
+    if isinstance(labels, list):
+        body["labels"] = [str(label) for label in labels if str(label).strip()]
+    elif isinstance(labels, str) and labels.strip():
+        body["labels"] = [part.strip() for part in labels.split(",") if part.strip()]
+    return body
+
+
+def comment_create_body(args: dict[str, Any]) -> dict[str, Any]:
+    text = (args.get("body") or "").strip()
+    if not text:
+        raise ConfigError("body is required")
+    return {"body": text}
+
+
+def pull_merge_body(args: dict[str, Any]) -> dict[str, Any]:
+    method = (args.get("merge_method") or "squash").strip()
+    if method not in {"merge", "squash", "rebase"}:
+        method = "squash"
+    body: dict[str, Any] = {"merge_method": method}
+    if args.get("commit_title"):
+        body["commit_title"] = str(args["commit_title"])
+    if args.get("commit_message"):
+        body["commit_message"] = str(args["commit_message"])
+    return body
+
+
+def _issue_number(args: dict[str, Any]) -> int:
+    try:
+        return int(args.get("number"))
+    except (TypeError, ValueError) as err:
+        raise ConfigError("number is required") from err
+
+
+async def _create_issue(args: dict[str, Any]) -> dict[str, Any]:
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
+    async with github_client() as client:
+        res = await client.post(f"/repos/{owner}/{repo}/issues", json=issue_create_body(args))
+        res.raise_for_status()
+        issue = res.json()
+        return {
+            "number": issue.get("number"),
+            "title": issue.get("title"),
+            "html_url": issue.get("html_url"),
+            "state": issue.get("state"),
+        }
+
+
+async def _add_comment(args: dict[str, Any]) -> dict[str, Any]:
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
+    number = _issue_number(args)
+    async with github_client() as client:
+        res = await client.post(
+            f"/repos/{owner}/{repo}/issues/{number}/comments",
+            json=comment_create_body(args),
+        )
+        res.raise_for_status()
+        comment = res.json()
+        return {
+            "id": comment.get("id"),
+            "html_url": comment.get("html_url"),
+            "number": number,
+        }
+
+
+async def _merge_pr(args: dict[str, Any]) -> dict[str, Any]:
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
+    number = _issue_number(args)
+    async with github_client() as client:
+        res = await client.put(
+            f"/repos/{owner}/{repo}/pulls/{number}/merge",
+            json=pull_merge_body(args),
+        )
+        res.raise_for_status()
+        payload = res.json()
+        return {
+            "merged": payload.get("merged"),
+            "sha": payload.get("sha"),
+            "message": payload.get("message"),
+            "number": number,
         }
 
 
@@ -404,7 +506,7 @@ github_tools = {
                 "name": "github_list_pull_requests",
                 "description": (
                     "List pull requests for a repository. "
-                    "Owner optional if GITHUB_USERNAME is set and repo is provided."
+                    "Owner optional after connect github if repo is provided."
                 ),
                 "parameters": {
                     "type": "object",
@@ -496,5 +598,77 @@ github_tools = {
             },
         },
         "handler": _path_contents,
+    },
+    "github_create_issue": {
+        "spec": {
+            "type": "function",
+            "function": {
+                "name": "github_create_issue",
+                "description": "Create an issue in a repository.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "title": {"type": "string"},
+                        "body": {"type": "string"},
+                        "labels": {
+                            "type": "string",
+                            "description": "Comma-separated label names",
+                        },
+                    },
+                    "required": ["title"],
+                },
+            },
+        },
+        "handler": _create_issue,
+    },
+    "github_add_comment": {
+        "spec": {
+            "type": "function",
+            "function": {
+                "name": "github_add_comment",
+                "description": "Comment on an issue or pull request by number.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "number": {"type": "integer"},
+                        "body": {"type": "string"},
+                    },
+                    "required": ["number", "body"],
+                },
+            },
+        },
+        "handler": _add_comment,
+    },
+    "github_merge_pull_request": {
+        "spec": {
+            "type": "function",
+            "function": {
+                "name": "github_merge_pull_request",
+                "description": (
+                    "Merge a pull request. Only call after the user explicitly confirmed the merge."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "number": {"type": "integer"},
+                        "merge_method": {
+                            "type": "string",
+                            "enum": ["merge", "squash", "rebase"],
+                            "description": "Default squash",
+                        },
+                        "commit_title": {"type": "string"},
+                        "commit_message": {"type": "string"},
+                    },
+                    "required": ["number"],
+                },
+            },
+        },
+        "handler": _merge_pr,
     },
 }

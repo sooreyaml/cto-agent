@@ -22,16 +22,21 @@ from src.google.service import (
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_creds: Credentials | None = None
+_creds_by_key: dict[str, Credentials] = {}
 
 
-def invalidate_google_credentials() -> None:
-    global _creds
+def invalidate_google_credentials(key: str | None = None) -> None:
     with _lock:
-        _creds = None
+        if key is None:
+            _creds_by_key.clear()
+        else:
+            _creds_by_key.pop(key.lower(), None)
 
 
 class PersistingCredentials(Credentials):
+    account_email: str | None = None
+    cache_key: str = "default"
+
     def refresh(self, request: GoogleAuthRequest) -> None:  # type: ignore[override]
         super().refresh(request)
         try:
@@ -40,6 +45,7 @@ class PersistingCredentials(Credentials):
                 access_token=self.token,
                 token_expiry=self.expiry,
                 scopes=" ".join(self.scopes) if self.scopes else None,
+                email=self.account_email,
             )
         except Exception:
             logger.exception("failed to persist Google tokens after refresh")
@@ -53,7 +59,7 @@ def _is_revoked(exc: BaseException) -> bool:
 def _from_bundle(bundle: GoogleTokenBundle) -> PersistingCredentials:
     settings = get_settings()
     scopes = bundle.scopes.split() if bundle.scopes else list(SCOPES)
-    return PersistingCredentials(
+    creds = PersistingCredentials(
         token=bundle.access_token,
         refresh_token=bundle.refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
@@ -62,11 +68,14 @@ def _from_bundle(bundle: GoogleTokenBundle) -> PersistingCredentials:
         scopes=scopes,
         expiry=bundle.token_expiry,
     )
+    creds.account_email = bundle.email
+    creds.cache_key = bundle.key
+    return creds
 
 
 def _from_env() -> PersistingCredentials:
     settings = get_settings()
-    return PersistingCredentials(
+    creds = PersistingCredentials(
         token=None,
         refresh_token=settings.GOOGLE_REFRESH_TOKEN,
         token_uri="https://oauth2.googleapis.com/token",
@@ -74,29 +83,31 @@ def _from_env() -> PersistingCredentials:
         client_secret=settings.GOOGLE_CLIENT_SECRET,
         scopes=list(SCOPES),
     )
+    creds.account_email = settings.GOOGLE_USER_EMAIL or None
+    creds.cache_key = (settings.GOOGLE_USER_EMAIL or "env").lower()
+    return creds
 
 
-def _credentials() -> Credentials:
-    global _creds
+def _credentials(account: str | None = None) -> Credentials:
     if not oauth_is_configured():
         raise ConfigError(
             "Google OAuth is not configured (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."
         )
+    bundle = load_account_sync(account)
+    cache_key = (account or (bundle.key if bundle else "default")).lower()
     with _lock:
-        if _creds is not None and _creds.refresh_token:
-            creds = _creds
-        else:
-            creds = None
+        creds = _creds_by_key.get(cache_key)
     if creds is None:
-        bundle = load_account_sync()
         if bundle is not None:
             creds = _from_bundle(bundle)
-        elif get_settings().GOOGLE_REFRESH_TOKEN and not env_refresh_rejected():
+            cache_key = bundle.key
+        elif not account and get_settings().GOOGLE_REFRESH_TOKEN and not env_refresh_rejected():
             creds = _from_env()
+            cache_key = creds.cache_key
         else:
             raise reconnect_config_error()
         with _lock:
-            _creds = creds
+            _creds_by_key[cache_key] = creds
     if creds.valid:
         return creds
     if not creds.refresh_token:
@@ -105,16 +116,16 @@ def _credentials() -> Credentials:
         creds.refresh(GoogleAuthRequest())
     except RefreshError as exc:
         if _is_revoked(exc):
-            handle_invalid_grant()
-            invalidate_google_credentials()
+            handle_invalid_grant(creds.account_email or cache_key)
+            invalidate_google_credentials(cache_key)
             raise reconnect_config_error() from exc
         raise
     return creds
 
 
-def get_gmail():
-    return build("gmail", "v1", credentials=_credentials(), cache_discovery=False)
+def get_gmail(account: str | None = None):
+    return build("gmail", "v1", credentials=_credentials(account), cache_discovery=False)
 
 
-def get_calendar():
-    return build("calendar", "v3", credentials=_credentials(), cache_discovery=False)
+def get_calendar(account: str | None = None):
+    return build("calendar", "v3", credentials=_credentials(account), cache_discovery=False)

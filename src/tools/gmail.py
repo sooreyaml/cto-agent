@@ -36,8 +36,8 @@ def _extract_plain(part: dict[str, Any] | None) -> str:
     return body
 
 
-def _search_sync(query: str, max_results: int) -> list[dict[str, Any]]:
-    gmail = get_gmail()
+def _search_sync(query: str, max_results: int, account: str | None = None) -> list[dict[str, Any]]:
+    gmail = get_gmail(account)
     listed = (
         gmail.users().messages().list(userId=USER_ID, q=query, maxResults=max_results).execute()
     )
@@ -61,8 +61,8 @@ def _search_sync(query: str, max_results: int) -> list[dict[str, Any]]:
     return out
 
 
-def _get_sync(message_id: str, fmt: str) -> dict[str, Any]:
-    gmail = get_gmail()
+def _get_sync(message_id: str, fmt: str, account: str | None = None) -> dict[str, Any]:
+    gmail = get_gmail(account)
     msg = gmail.users().messages().get(userId=USER_ID, id=message_id, format=fmt).execute()
     headers = msg.get("payload", {}).get("headers") or []
     body = _extract_plain(msg.get("payload"))
@@ -76,8 +76,8 @@ def _get_sync(message_id: str, fmt: str) -> dict[str, Any]:
     }
 
 
-def _draft_sync(to: str, subject: str, body: str) -> dict[str, Any]:
-    gmail = get_gmail()
+def _draft_sync(to: str, subject: str, body: str, account: str | None = None) -> dict[str, Any]:
+    gmail = get_gmail(account)
     draft = (
         gmail.users()
         .drafts()
@@ -92,8 +92,8 @@ def _draft_sync(to: str, subject: str, body: str) -> dict[str, Any]:
     }
 
 
-def _send_sync(to: str, subject: str, body: str) -> dict[str, Any]:
-    gmail = get_gmail()
+def _send_sync(to: str, subject: str, body: str, account: str | None = None) -> dict[str, Any]:
+    gmail = get_gmail(account)
     sent = (
         gmail.users()
         .messages()
@@ -107,21 +107,33 @@ def _send_sync(to: str, subject: str, body: str) -> dict[str, Any]:
     }
 
 
+def _account(args: dict[str, Any]) -> str | None:
+    raw = args.get("account")
+    text = str(raw).strip() if raw is not None else ""
+    return text or None
+
+
 async def _search_messages(args: dict[str, Any]) -> list[dict[str, Any]]:
     max_results = min(max(args.get("max_results") or 10, 1), 20)
-    return await run_in_threadpool(_search_sync, args["query"], max_results)
+    return await run_in_threadpool(_search_sync, args["query"], max_results, _account(args))
 
 
 async def _get_message(args: dict[str, Any]) -> dict[str, Any]:
-    return await run_in_threadpool(_get_sync, args["message_id"], args.get("format") or "full")
+    return await run_in_threadpool(
+        _get_sync, args["message_id"], args.get("format") or "full", _account(args)
+    )
 
 
 async def _create_draft(args: dict[str, Any]) -> dict[str, Any]:
-    return await run_in_threadpool(_draft_sync, args["to"], args["subject"], args["body"])
+    return await run_in_threadpool(
+        _draft_sync, args["to"], args["subject"], args["body"], _account(args)
+    )
 
 
 async def _send_message(args: dict[str, Any]) -> dict[str, Any]:
-    return await run_in_threadpool(_send_sync, args["to"], args["subject"], args["body"])
+    return await run_in_threadpool(
+        _send_sync, args["to"], args["subject"], args["body"], _account(args)
+    )
 
 
 gmail_tools = {
@@ -139,6 +151,10 @@ gmail_tools = {
                     "properties": {
                         "query": {"type": "string", "description": "Gmail search query"},
                         "max_results": {"type": "integer", "description": "1–20, default 10"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
                     },
                     "required": ["query"],
                 },
@@ -161,6 +177,10 @@ gmail_tools = {
                             "enum": ["full", "metadata"],
                             "description": "Default full",
                         },
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
                     },
                     "required": ["message_id"],
                 },
@@ -180,6 +200,10 @@ gmail_tools = {
                         "to": {"type": "string", "description": "Recipient email"},
                         "subject": {"type": "string"},
                         "body": {"type": "string", "description": "Plain text body"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
                     },
                     "required": ["to", "subject", "body"],
                 },
@@ -194,7 +218,7 @@ gmail_tools = {
                 "name": "gmail_send_message",
                 "description": (
                     "Send an email immediately (plain text). Use only after user explicitly confirms. "
-                    "Uses configured Google account."
+                    "Uses the default Google account unless account is set."
                 ),
                 "parameters": {
                     "type": "object",
@@ -202,6 +226,10 @@ gmail_tools = {
                         "to": {"type": "string"},
                         "subject": {"type": "string"},
                         "body": {"type": "string"},
+                        "account": {
+                            "type": "string",
+                            "description": "Google account email or label. Default account if omitted.",
+                        },
                     },
                     "required": ["to", "subject", "body"],
                 },

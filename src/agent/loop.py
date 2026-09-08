@@ -7,6 +7,7 @@ from src.agent.llm import MODEL, llm
 from src.agent.prompt import build_system_prompt
 from src.agent.registry import tool_registry, tool_specs
 from src.memory.repository import load_history, persist_turn
+from src.work.snapshot import load_work_snapshot
 
 logger = logging.getLogger(__name__)
 MAX_ITERATIONS = 10
@@ -44,8 +45,17 @@ async def run_agent(
     else:
         user_msg = {"role": "user", "content": user_message}
 
+    try:
+        work_context = await load_work_snapshot()
+    except Exception:
+        logger.exception("load_work_snapshot failed")
+        work_context = "Work board unavailable."
+
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_system_prompt(surface=surface)},
+        {
+            "role": "system",
+            "content": build_system_prompt(surface=surface, work_context=work_context),
+        },
         *history,
         user_msg,
     ]

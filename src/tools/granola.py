@@ -1,22 +1,18 @@
 from typing import Any
-from urllib.parse import quote
 
-from src.integrations.granola import granola_request
+from src.integrations.granola import granola_get_meeting, granola_list_meetings, granola_search
 
 
 async def _list_meetings(args: dict[str, Any]) -> object:
-    limit = min(args.get("limit") or 10, 50)
-    return await granola_request(f"/meetings?limit={limit}")
+    return await granola_list_meetings(min(args.get("limit") or 10, 50))
 
 
 async def _get_meeting(args: dict[str, Any]) -> object:
-    return await granola_request(f"/meetings/{quote(args['meeting_id'], safe='')}")
+    return await granola_get_meeting(str(args["meeting_id"]))
 
 
 async def _search(args: dict[str, Any]) -> object:
-    limit = min(args.get("limit") or 10, 30)
-    query = quote(args["query"])
-    return await granola_request(f"/search?q={query}&limit={limit}")
+    return await granola_search(str(args["query"]), min(args.get("limit") or 10, 30))
 
 
 granola_tools = {
@@ -25,7 +21,10 @@ granola_tools = {
             "type": "function",
             "function": {
                 "name": "granola_list_meetings",
-                "description": "List recent meetings/notes from Granola API (GET /meetings?limit=). Path may need customization.",
+                "description": (
+                    "List recent Granola meetings. If not connected, tell the user to say "
+                    "“connect granola” and send the sign-in link from connections_connect."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {"limit": {"type": "integer"}},
@@ -39,7 +38,7 @@ granola_tools = {
             "type": "function",
             "function": {
                 "name": "granola_get_meeting",
-                "description": "Fetch a single Granola meeting/note by id (GET /meetings/:id).",
+                "description": "Fetch a Granola meeting/note by id after connect granola.",
                 "parameters": {
                     "type": "object",
                     "properties": {"meeting_id": {"type": "string"}},
@@ -54,7 +53,7 @@ granola_tools = {
             "type": "function",
             "function": {
                 "name": "granola_search",
-                "description": "Search Granola (GET /search?q=). Path may need customization for your workspace.",
+                "description": "Search Granola meeting notes (MCP query after connect granola).",
                 "parameters": {
                     "type": "object",
                     "properties": {

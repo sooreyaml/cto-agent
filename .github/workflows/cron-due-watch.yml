@@ -1,0 +1,25 @@
+name: Due and Watch
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  due:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit due endpoint
+        run: |
+          curl -fsSL -X POST "${{ secrets.AGENT_BASE_URL }}/cron/due" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit watch endpoint
+        run: |
+          curl -fsSL -X POST "${{ secrets.AGENT_BASE_URL }}/cron/watch" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 120

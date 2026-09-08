@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
@@ -42,6 +42,15 @@ class GoogleTokenBundle:
     access_token: str | None
     token_expiry: datetime | None
     scopes: str | None
+    id: str | None = None
+    label: str | None = None
+    is_default: bool = False
+
+    @property
+    def key(self) -> str:
+        if self.email:
+            return self.email.lower()
+        return self.id or self.slack_user_id
 
 
 def oauth_is_configured() -> bool:
@@ -118,7 +127,8 @@ def connect_message_markdown(*, slack_user_id: str | None = None) -> str:
     url = issue_connect_url(slack_user_id=slack_user_id)
     return "\n".join(
         [
-            "**Connect Google** for Gmail and Calendar.",
+            "**Connect Google** for Gmail and Calendar. You can add more than one account "
+            "(work, personal, …) — pick the account on Google's screen.",
             "",
             f"[Open Google sign-in]({url})",
             "",
@@ -157,35 +167,57 @@ def _row_to_bundle(row: GoogleAccount) -> GoogleTokenBundle:
         access_token=row.access_token,
         token_expiry=row.token_expiry,
         scopes=row.scopes,
+        id=str(row.id),
+        label=row.label,
+        is_default=bool(row.is_default),
     )
 
 
-async def _get_account_row(
-    db: AsyncSession, slack_user_id: str | None = None
-) -> GoogleAccount | None:
-    candidates: list[str] = []
-    if slack_user_id:
-        candidates.append(slack_user_id)
-    owner = _owner_user_id()
-    if owner and owner not in candidates:
-        candidates.append(owner)
-    if candidates:
-        row = await db.scalar(
-            select(GoogleAccount).where(GoogleAccount.slack_user_id.in_(candidates))
-        )
+def _account_summary(row: GoogleAccount | GoogleTokenBundle) -> dict[str, object]:
+    return {
+        "id": str(row.id) if row.id else None,
+        "email": row.email,
+        "label": row.label,
+        "is_default": bool(row.is_default),
+    }
+
+
+async def _row_by_selector(db: AsyncSession, account: str | None) -> GoogleAccount | None:
+    text = (account or "").strip()
+    if not text or text == _owner_user_id():
+        row = await db.scalar(select(GoogleAccount).where(GoogleAccount.is_default.is_(True)))
         if row is not None:
             return row
-    rows = list((await db.scalars(select(GoogleAccount).limit(2))).all())
-    if len(rows) == 1:
-        return rows[0]
-    return None
+        return await db.scalar(select(GoogleAccount).order_by(GoogleAccount.created_at.asc()))
+    lowered = text.lower()
+    by_email = await db.scalar(
+        select(GoogleAccount).where(func.lower(GoogleAccount.email) == lowered)
+    )
+    if by_email is not None:
+        return by_email
+    by_label = await db.scalar(
+        select(GoogleAccount).where(func.lower(GoogleAccount.label) == lowered)
+    )
+    if by_label is not None:
+        return by_label
+    try:
+        from uuid import UUID
+
+        return await db.get(GoogleAccount, UUID(text))
+    except (ValueError, AttributeError, TypeError):
+        return None
 
 
 async def load_account(
-    slack_user_id: str | None = None, session: AsyncSession | None = None
+    account: str | None = None,
+    session: AsyncSession | None = None,
+    *,
+    slack_user_id: str | None = None,
 ) -> GoogleTokenBundle | None:
+    selector = account if account is not None else slack_user_id
+
     async def _load(db: AsyncSession) -> GoogleTokenBundle | None:
-        row = await _get_account_row(db, slack_user_id)
+        row = await _row_by_selector(db, selector)
         return _row_to_bundle(row) if row else None
 
     if session is not None:
@@ -194,8 +226,35 @@ async def load_account(
         return await _load(db)
 
 
-def load_account_sync(slack_user_id: str | None = None) -> GoogleTokenBundle | None:
-    return run_from_thread(load_account(slack_user_id))
+def load_account_sync(account: str | None = None) -> GoogleTokenBundle | None:
+    return run_from_thread(load_account(account))
+
+
+async def list_accounts() -> list[dict[str, object]]:
+    async with async_session_factory() as db:
+        rows = list(
+            (await db.scalars(select(GoogleAccount).order_by(GoogleAccount.created_at.asc()))).all()
+        )
+        return [_account_summary(row) for row in rows]
+
+
+def list_accounts_sync() -> list[dict[str, object]]:
+    return run_from_thread(list_accounts())
+
+
+async def _ensure_one_default(session: AsyncSession, prefer_id: object | None = None) -> None:
+    if prefer_id is not None:
+        await session.execute(update(GoogleAccount).values(is_default=False))
+        row = await session.get(GoogleAccount, prefer_id)
+        if row is not None:
+            row.is_default = True
+            return
+    current = await session.scalar(select(GoogleAccount).where(GoogleAccount.is_default.is_(True)))
+    if current is not None:
+        return
+    first = await session.scalar(select(GoogleAccount).order_by(GoogleAccount.created_at.asc()))
+    if first is not None:
+        first.is_default = True
 
 
 async def upsert_google_account(
@@ -206,16 +265,24 @@ async def upsert_google_account(
     token_expiry: datetime | None,
     scopes: str | None,
     email: str | None,
+    label: str | None = None,
 ) -> GoogleTokenBundle:
     now = _utcnow()
     async with async_session_factory() as session:
-        row = await _get_account_row(session, slack_user_id)
+        row = None
+        if email:
+            row = await session.scalar(
+                select(GoogleAccount).where(func.lower(GoogleAccount.email) == email.lower())
+            )
         if row is None:
             if not refresh_token:
                 raise ConfigError("Google did not return a refresh token; reconnect with consent.")
+            count = int(await session.scalar(select(func.count()).select_from(GoogleAccount)) or 0)
             row = GoogleAccount(
                 slack_user_id=slack_user_id,
                 email=email,
+                label=label,
+                is_default=count == 0,
                 refresh_token=refresh_token,
                 access_token=access_token,
                 token_expiry=naive_utc(token_expiry),
@@ -236,7 +303,11 @@ async def upsert_google_account(
                 row.scopes = scopes
             if email:
                 row.email = email
+            if label:
+                row.label = label
             row.updated_at = now
+        await session.flush()
+        await _ensure_one_default(session)
         await session.commit()
         await session.refresh(row)
         return _row_to_bundle(row)
@@ -263,16 +334,45 @@ def save_tokens_sync(
     )
 
 
-async def delete_account(slack_user_id: str | None = None) -> None:
+async def set_default_account(account: str) -> GoogleTokenBundle:
     async with async_session_factory() as session:
-        row = await _get_account_row(session, slack_user_id)
-        if row is not None:
-            await session.delete(row)
-            await session.commit()
+        row = await _row_by_selector(session, account)
+        if row is None:
+            raise ConfigError(f"No Google account matches {account!r}")
+        await _ensure_one_default(session, prefer_id=row.id)
+        await session.commit()
+        await session.refresh(row)
+        return _row_to_bundle(row)
 
 
-def delete_account_sync(slack_user_id: str | None = None) -> None:
-    run_from_thread(delete_account(slack_user_id))
+async def label_account(account: str, label: str | None) -> GoogleTokenBundle:
+    text = (label or "").strip() or None
+    async with async_session_factory() as session:
+        row = await _row_by_selector(session, account)
+        if row is None:
+            raise ConfigError(f"No Google account matches {account!r}")
+        row.label = text
+        row.updated_at = _utcnow()
+        await session.commit()
+        await session.refresh(row)
+        return _row_to_bundle(row)
+
+
+async def delete_account(account: str | None = None, *, slack_user_id: str | None = None) -> bool:
+    selector = account if account is not None else slack_user_id
+    async with async_session_factory() as session:
+        row = await _row_by_selector(session, selector)
+        if row is None:
+            return False
+        await session.delete(row)
+        await session.flush()
+        await _ensure_one_default(session)
+        await session.commit()
+        return True
+
+
+def delete_account_sync(account: str | None = None) -> None:
+    run_from_thread(delete_account(account))
 
 
 def mark_env_refresh_rejected() -> None:
@@ -341,16 +441,11 @@ def authorization_url(ticket: str) -> str:
     if not oauth_is_configured():
         raise GoogleOAuthNotConfigured()
     parsed = parse_connect_ticket(ticket)
-    settings = get_settings()
     flow = _oauth_flow(code_verifier=parsed.code_verifier)
-    kwargs: dict[str, str] = {}
-    if settings.GOOGLE_USER_EMAIL:
-        kwargs["login_hint"] = settings.GOOGLE_USER_EMAIL
     url, _state = flow.authorization_url(
         access_type="offline",
-        prompt="consent",
+        prompt="consent select_account",
         state=ticket,
-        **kwargs,
     )
     return url
 
@@ -410,9 +505,10 @@ def _email_from_credentials(creds: object) -> str | None:
         return None
 
 
-def handle_invalid_grant() -> None:
+def handle_invalid_grant(account: str | None = None) -> None:
     try:
-        delete_account_sync()
+        delete_account_sync(account)
     except Exception:
         logger.exception("failed to delete Google account after invalid_grant")
-    mark_env_refresh_rejected()
+    if not list_accounts_sync():
+        mark_env_refresh_rejected()

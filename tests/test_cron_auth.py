@@ -4,7 +4,8 @@ from src.main import app
 
 
 @pytest.mark.asyncio
-async def test_daily_brief_unauthorized() -> None:
+@pytest.mark.parametrize("path", ["/cron/daily-brief", "/cron/due", "/cron/watch"])
+async def test_cron_unauthorized(path: str) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        res = await client.post("/cron/daily-brief")
+        res = await client.post(path)
     assert res.status_code == 401

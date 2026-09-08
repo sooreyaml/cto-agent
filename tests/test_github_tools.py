@@ -3,9 +3,12 @@ from datetime import UTC, datetime
 import pytest
 from src.exceptions import ConfigError
 from src.tools.github import (
+    comment_create_body,
     compact_issue,
     compact_repo,
+    issue_create_body,
     parse_repo,
+    pull_merge_body,
     repo_from_repository_url,
     select_active_repos,
 )
@@ -89,3 +92,21 @@ def test_compact_repo_and_issue() -> None:
     assert issue["repo"] == "acme/api"
     assert issue["is_pull_request"] is True
     assert issue["labels"] == ["bug"]
+
+
+def test_issue_create_body() -> None:
+    assert issue_create_body({"title": "Outage", "body": "prod", "labels": "bug,p0"}) == {
+        "title": "Outage",
+        "body": "prod",
+        "labels": ["bug", "p0"],
+    }
+    with pytest.raises(ConfigError, match="title"):
+        issue_create_body({})
+
+
+def test_comment_and_merge_bodies() -> None:
+    assert comment_create_body({"body": "lgtm"}) == {"body": "lgtm"}
+    assert pull_merge_body({})["merge_method"] == "squash"
+    assert pull_merge_body({"merge_method": "rebase"})["merge_method"] == "rebase"
+    with pytest.raises(ConfigError, match="body"):
+        comment_create_body({"body": "  "})

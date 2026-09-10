@@ -6,18 +6,6 @@ class CronHealthResponse(BaseModel):
     cron: str
 
 
-class DailyBriefResponse(BaseModel):
+class CronDispatchResponse(BaseModel):
     ok: bool
     dispatched: bool
-
-
-class DueResponse(BaseModel):
-    ok: bool
-    reminders: int
-    commitments: int
-
-
-class WatchResponse(BaseModel):
-    ok: bool
-    failures: int
-    notified: int

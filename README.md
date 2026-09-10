@@ -60,7 +60,7 @@ Tokens are stored in Postgres (one row per Google email). If Google revokes acce
 
 ### Daily brief (GitHub Actions)
 
-The brief is DMed on Discord. The cron endpoint runs the job **inline** (not in a background task) so a failed send fails the workflow.
+The brief is DMed on Discord. Cron routes return immediately and run the job in-process afterward so Cloudflare/Coolify cannot 504 a long brief. A job failure is logged and DMed; it does not fail the GitHub Action.
 
 1. Set repo secrets: **`AGENT_BASE_URL`** (no trailing slash), e.g. `https://cto-agent.example.com`, and **`CRON_SECRET`** (same value as in production `CRON_SECRET`).
 2. Connect GitHub from Discord (`connect github`) after setting **`GITHUB_CLIENT_ID`** and **`GITHUB_CLIENT_SECRET`** (GitHub OAuth App, callback `{APP_PUBLIC_URL}/auth/github/callback`). The brief lists recently pushed repos the token can access (last 14 days, up to 10) and summarizes open PRs plus failing CI on each default branch. `GITHUB_PAT` is optional leftover.

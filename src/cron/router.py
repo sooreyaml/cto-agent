@@ -22,7 +22,7 @@ async def cron_health() -> dict[str, str | bool]:
     "/daily-brief",
     response_model=DailyBriefResponse,
     summary="Dispatch the daily executive brief",
-    description="Requires Authorization: Bearer $CRON_SECRET. Runs the brief and DMs Discord before returning.",
+    description="Requires Authorization: Bearer $CRON_SECRET or X-Cron-Secret. Runs the brief and DMs Discord before returning.",
     responses={
         401: {"description": "Missing or invalid cron bearer token"},
         503: {"description": "CRON_SECRET is not configured"},
@@ -37,7 +37,7 @@ async def daily_brief(_auth: CronAuth) -> dict[str, bool]:
     "/due",
     response_model=DueResponse,
     summary="Send due reminders and commitment nudges",
-    description="Requires Authorization: Bearer $CRON_SECRET. DMs Discord before returning.",
+    description="Requires Authorization: Bearer $CRON_SECRET or X-Cron-Secret. DMs Discord before returning.",
     responses={
         401: {"description": "Missing or invalid cron bearer token"},
         503: {"description": "CRON_SECRET is not configured"},
@@ -52,7 +52,7 @@ async def due(_auth: CronAuth) -> dict[str, bool | int]:
     "/watch",
     response_model=WatchResponse,
     summary="Notify new GitHub Actions failures on active repos",
-    description="Requires Authorization: Bearer $CRON_SECRET. DMs Discord before returning.",
+    description="Requires Authorization: Bearer $CRON_SECRET or X-Cron-Secret. DMs Discord before returning.",
     responses={
         401: {"description": "Missing or invalid cron bearer token"},
         503: {"description": "CRON_SECRET is not configured"},

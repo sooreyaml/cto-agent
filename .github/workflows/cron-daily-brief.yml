@@ -9,8 +9,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Hit daily-brief endpoint
+        env:
+          AGENT_BASE_URL: ${{ secrets.AGENT_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -fsSL -X POST "${{ secrets.AGENT_BASE_URL }}/cron/daily-brief" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          set -euo pipefail
+          if [ -z "${AGENT_BASE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "AGENT_BASE_URL or CRON_SECRET repository secret is empty" >&2
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/cron-body -w "%{http_code}" -X POST "${AGENT_BASE_URL%/}/cron/daily-brief" \
+            --oauth2-bearer "${CRON_SECRET}" \
+            -H "X-Cron-Secret: ${CRON_SECRET}" \
             -H "Content-Type: application/json" \
-            --max-time 120
+            --max-time 120)
+          echo "HTTP ${code}"
+          cat /tmp/cron-body
+          echo
+          test "${code}" = "200"

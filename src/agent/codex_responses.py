@@ -264,9 +264,7 @@ class CodexCompletions:
         if tools:
             body["tools"] = tools
             body["tool_choice"] = kwargs.get("tool_choice") or "auto"
-        max_tokens = kwargs.get("max_tokens") or kwargs.get("max_output_tokens")
-        if isinstance(max_tokens, (int, float)) and max_tokens > 0:
-            body["max_output_tokens"] = int(max_tokens)
+        # ChatGPT Codex OAuth rejects max_output_tokens / max_tokens.
 
         cred = await resolve_credential()
         base = settings.CODEX_BASE_URL.rstrip("/")

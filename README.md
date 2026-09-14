@@ -52,7 +52,7 @@ OpenRouter stays the primary model. After you connect ChatGPT, Codex OAuth is us
 1. Keep `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` set. Leave `LLM_PROVIDER=openrouter`.
 2. DM the bot `connect openai`. Open the link, sign in, enter the one-time code. Enable **Device code authorization** in ChatGPT → Settings → Security if it is rejected.
 3. Wait for the “connected” DM (up to 15 minutes). Tokens live in Postgres and refresh automatically. This login is **separate** from the Codex CLI so they do not invalidate each other.
-4. Optional: `CODEX_MODEL` (default `gpt-5.4`) is the fallback model. Set `LLM_PROVIDER=openai-codex` only if you want Codex as the sole provider.
+4. Optional: `CODEX_MODEL` (default `gpt-5.6-sol`) is the fallback model. Other ChatGPT OAuth options include `gpt-5.6-terra` and `gpt-5.6-luna`. Set `LLM_PROVIDER=openai-codex` only if you want Codex as the sole provider.
 
 Local alternative: `python -m src.agent.codex_login` (needs Postgres). Plan quota still applies; this is not unlimited API.
 
@@ -100,10 +100,10 @@ DM the bot `connect granola` and sign in in the browser. Granola MCP uses OAuth 
 
 ## Scripts
 
-| Command                                               | Description                                      |
-| ----------------------------------------------------- | ------------------------------------------------ |
-| `docker compose up --build`                           | App + Postgres                                   |
-| `uvicorn src.main:app --reload --port 8000`           | API only (needs local Postgres)                  |
-| `alembic upgrade head`                                | Apply migrations (host / already run in compose) |
+| Command                                               | Description                                                |
+| ----------------------------------------------------- | ---------------------------------------------------------- |
+| `docker compose up --build`                           | App + Postgres                                             |
+| `uvicorn src.main:app --reload --port 8000`           | API only (needs local Postgres)                            |
+| `alembic upgrade head`                                | Apply migrations (host / already run in compose)           |
 | `python -m src.agent.codex_login`                     | ChatGPT / Codex device-code login (or DM `connect openai`) |
-| `ruff check --fix src tests && ruff format src tests` | Lint / format                                    |
+| `ruff check --fix src tests && ruff format src tests` | Lint / format                                              |

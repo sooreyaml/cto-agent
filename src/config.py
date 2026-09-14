@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = "anthropic/claude-sonnet-4.6"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
-    CODEX_MODEL: str = "gpt-5.4"
+    CODEX_MODEL: str = "gpt-5.6-sol"
     CODEX_BASE_URL: str = "https://chatgpt.com/backend-api/codex"
 
     DISCORD_BOT_TOKEN: str = Field(min_length=1)

@@ -104,7 +104,9 @@ async def test_falls_back_to_codex_when_openrouter_rate_limits(
         raise openai.RateLimitError("slow", response=response, body=None)
 
     async def ok(**kwargs: object) -> dict[str, object]:
-        assert kwargs["model"] == "gpt-5.4"
+        from src.config import get_settings
+
+        assert kwargs["model"] == get_settings().CODEX_MODEL
         return {"ok": True, "via": "codex"}
 
     async def cred() -> CodexCredential:

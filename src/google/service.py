@@ -64,12 +64,21 @@ def oauth_redirect_uri() -> str:
 
 def _ticket_secret() -> bytes:
     settings = get_settings()
-    key = settings.GOOGLE_CLIENT_SECRET or settings.DISCORD_BOT_TOKEN
+    key = (
+        settings.GOOGLE_CLIENT_SECRET
+        or settings.DISCORD_BOT_TOKEN
+        or settings.SLACK_SIGNING_SECRET
+        or settings.SLACK_BOT_TOKEN
+    )
     return key.encode("utf-8")
 
 
 def _owner_user_id() -> str:
     return get_settings().owner_user_id
+
+
+def _is_owner(user_id: str) -> bool:
+    return get_settings().is_owner_user_id(user_id)
 
 
 def _pkce_verifier() -> str:
@@ -110,7 +119,7 @@ def parse_connect_ticket(ticket: str) -> ConnectTicket:
         raise GoogleOAuthInvalidTicket() from exc
     if expires_at < int(time.time()):
         raise GoogleOAuthInvalidTicket()
-    if slack_user_id != _owner_user_id():
+    if not _is_owner(slack_user_id):
         raise GoogleOAuthInvalidTicket()
     return ConnectTicket(slack_user_id=slack_user_id, code_verifier=code_verifier)
 
@@ -184,7 +193,7 @@ def _account_summary(row: GoogleAccount | GoogleTokenBundle) -> dict[str, object
 
 async def _row_by_selector(db: AsyncSession, account: str | None) -> GoogleAccount | None:
     text = (account or "").strip()
-    if not text or text == _owner_user_id():
+    if not text or get_settings().is_owner_user_id(text):
         row = await db.scalar(select(GoogleAccount).where(GoogleAccount.is_default.is_(True)))
         if row is not None:
             return row
@@ -404,10 +413,15 @@ def reconnect_config_error() -> ConfigError:
             "Google OAuth is not configured (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."
         )
     url = issue_connect_url()
+    surfaces: list[str] = []
+    if settings.discord_enabled:
+        surfaces.append(f"Discord user {settings.DISCORD_USER_ID}")
+    if settings.slack_enabled:
+        surfaces.append(f"Slack user {settings.SLACK_USER_ID}")
+    who = " / ".join(surfaces) if surfaces else settings.owner_user_id
     return ConfigError(
         "Google access is missing or expired. Ask the user to open this connect link: "
-        f"{url} (or tell them to say “connect google” in Discord). "
-        f"Configured Discord user: {settings.DISCORD_USER_ID}."
+        f"{url} (or tell them to say “connect google”). Configured owner: {who}."
     )
 
 

@@ -36,8 +36,12 @@ class Settings(BaseSettings):
     CODEX_MODEL: str = "gpt-5.6-sol"
     CODEX_BASE_URL: str = "https://chatgpt.com/backend-api/codex"
 
-    DISCORD_BOT_TOKEN: str = Field(min_length=1)
-    DISCORD_USER_ID: str = Field(min_length=1)
+    DISCORD_BOT_TOKEN: str = ""
+    DISCORD_USER_ID: str = ""
+
+    SLACK_BOT_TOKEN: str = ""
+    SLACK_SIGNING_SECRET: str = ""
+    SLACK_USER_ID: str = ""
 
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
@@ -72,13 +76,48 @@ class Settings(BaseSettings):
             raise ValueError("OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter")
         return self
 
+    @model_validator(mode="after")
+    def require_chat_surface(self) -> Self:
+        discord_any = bool(self.DISCORD_BOT_TOKEN or self.DISCORD_USER_ID)
+        slack_any = bool(self.SLACK_BOT_TOKEN or self.SLACK_SIGNING_SECRET or self.SLACK_USER_ID)
+        if discord_any and not self.discord_enabled:
+            raise ValueError("Discord requires DISCORD_BOT_TOKEN and DISCORD_USER_ID")
+        if slack_any and not self.slack_enabled:
+            raise ValueError(
+                "Slack requires SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, and SLACK_USER_ID"
+            )
+        if not self.discord_enabled and not self.slack_enabled:
+            raise ValueError(
+                "Configure Discord (DISCORD_BOT_TOKEN + DISCORD_USER_ID) and/or "
+                "Slack (SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET + SLACK_USER_ID)"
+            )
+        return self
+
     @property
     def async_database_url(self) -> str:
         return async_database_url_from(self.DATABASE_URL)
 
     @property
+    def discord_enabled(self) -> bool:
+        return bool(self.DISCORD_BOT_TOKEN and self.DISCORD_USER_ID)
+
+    @property
+    def slack_enabled(self) -> bool:
+        return bool(self.SLACK_BOT_TOKEN and self.SLACK_SIGNING_SECRET and self.SLACK_USER_ID)
+
+    @property
     def owner_user_id(self) -> str:
-        return self.DISCORD_USER_ID
+        if self.discord_enabled:
+            return self.DISCORD_USER_ID
+        return self.SLACK_USER_ID
+
+    def is_owner_user_id(self, user_id: str) -> bool:
+        owners: set[str] = set()
+        if self.discord_enabled:
+            owners.add(self.DISCORD_USER_ID)
+        if self.slack_enabled:
+            owners.add(self.SLACK_USER_ID)
+        return user_id in owners
 
     @property
     def docs_enabled(self) -> bool:

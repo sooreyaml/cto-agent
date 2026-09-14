@@ -21,11 +21,22 @@ class ConnectTicket:
 
 
 def _ticket_secret() -> bytes:
-    return get_settings().DISCORD_BOT_TOKEN.encode("utf-8")
+    settings = get_settings()
+    key = (
+        settings.DISCORD_BOT_TOKEN
+        or settings.SLACK_BOT_TOKEN
+        or settings.SLACK_SIGNING_SECRET
+        or "cto-agent"
+    )
+    return key.encode("utf-8")
 
 
 def _owner_user_id() -> str:
     return get_settings().owner_user_id
+
+
+def _is_owner(user_id: str) -> bool:
+    return get_settings().is_owner_user_id(user_id)
 
 
 def pkce_verifier() -> str:
@@ -87,7 +98,7 @@ def parse_ticket(ticket: str) -> ConnectTicket:
     verifier = str(data.get("v") or "")
     if not uid or not verifier:
         raise ConnectOAuthInvalidTicket()
-    if uid != _owner_user_id():
+    if not _is_owner(uid):
         raise ConnectOAuthInvalidTicket()
     client_id = data.get("cid")
     return ConnectTicket(

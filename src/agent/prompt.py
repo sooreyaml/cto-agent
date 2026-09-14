@@ -65,4 +65,18 @@ def build_system_prompt(*, surface: str = "discord", work_context: str = "") -> 
         text = text.replace(WORK_PLACEHOLDER, work)
     else:
         text = f"{text.strip()}\n\n{work}"
-    return text.strip()
+    text = text.strip()
+    if surface == "slack":
+        text = (
+            f"{text}\n\n"
+            "**Surface override:** this reply is shown in Slack. Use Slack mrkdwn: "
+            "*bold* (single asterisks, never `**`), _italic_, and `<https://example.com|label>` "
+            "links. Do not use Discord `[label](url)` links or `#` headings."
+        )
+        if get_settings().slack_enabled:
+            text = (
+                f"{text}\n"
+                "Reminders: `slack_remind_at` / `slack_list_reminders` / "
+                "`slack_cancel_reminder` schedule Slack DMs."
+            )
+    return text

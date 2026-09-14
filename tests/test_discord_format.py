@@ -35,8 +35,18 @@ def test_system_prompt_is_discord() -> None:
     assert "work_list" in prompt or "Work:" in prompt
 
 
+def test_system_prompt_slack_surface_override() -> None:
+    prompt = build_system_prompt(surface="slack", work_context="Work board:\n- P1: Ship")
+    assert "Surface override" in prompt
+    assert "Slack mrkdwn" in prompt
+    assert "P1: Ship" in prompt
+
+
 def test_discord_user_required(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "x")
     monkeypatch.setenv("DISCORD_USER_ID", "")
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "")
+    monkeypatch.setenv("SLACK_SIGNING_SECRET", "")
+    monkeypatch.setenv("SLACK_USER_ID", "")
     with pytest.raises(ValidationError):
         Settings()

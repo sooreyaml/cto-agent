@@ -36,9 +36,13 @@ async def lifespan(_app: FastAPI):
             "until DATABASE_URL is the Coolify *internal* DB URL (not localhost)",
             database_target(),
         )
-    await start_discord_bot()
+    if settings.discord_enabled:
+        await start_discord_bot()
+    if settings.slack_enabled:
+        logger.info("slack events enabled path=/slack/events owner=%s", settings.SLACK_USER_ID)
     yield
-    await stop_discord_bot()
+    if settings.discord_enabled:
+        await stop_discord_bot()
     set_main_loop(None)
     await engine.dispose()
 
@@ -57,3 +61,7 @@ app.include_router(health_router)
 app.include_router(cron_router)
 app.include_router(google_auth_router)
 app.include_router(connections_auth_router)
+if settings.slack_enabled:
+    from src.slack.router import router as slack_router
+
+    app.include_router(slack_router)

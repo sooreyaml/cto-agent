@@ -1,12 +1,12 @@
 # CTO Agent
 
-Discord DM → FastAPI → OpenRouter or ChatGPT/Codex OAuth → Postgres memory.
+Discord and/or Slack DM → FastAPI → OpenRouter or ChatGPT/Codex OAuth → Postgres memory.
 
 ## Quick start
 
 Compose starts **Postgres and the API** together. You do not need a separate Coolify/database resource.
 
-1. Copy env and fill Discord / OpenRouter (or Codex) / other secrets:
+1. Copy env and fill Discord and/or Slack / OpenRouter (or Codex) / other secrets:
 
    ```bash
    cp .env.example .env
@@ -24,7 +24,10 @@ The app container always uses `DATABASE_URL=postgresql://cto:…@db:5432/cto_age
 
 Migrations run automatically on container start (`alembic upgrade head`).
 
-Discord does not use an HTTP events URL. The API process opens a Gateway connection on startup. Logs should show `discord connected bot=… owner=…`.
+Configure at least one chat surface:
+
+- **Discord:** the API process opens a Gateway connection on startup. Logs should show `discord connected bot=… owner=…`.
+- **Slack:** Event Subscriptions URL `https://<your-host>/slack/events`. Logs should show `slack events enabled path=/slack/events`.
 
 OpenAPI docs (`/docs`) are enabled in `development` and `test` only.
 
@@ -35,7 +38,7 @@ OpenAPI docs (`/docs`) are enabled in `development` and `test` only.
 3. Set the same secrets as `.env.example` (**Runtime only**, not build-time).
 4. Set `POSTGRES_PASSWORD` to a strong value. You can **delete** any old remote `DATABASE_URL` — compose points the app at `db`.
 5. Set `APP_PUBLIC_URL` to your public HTTPS origin (no trailing slash).
-6. Set `DISCORD_BOT_TOKEN` and `DISCORD_USER_ID`. Slack env vars are unused and can be deleted.
+6. Set Discord (`DISCORD_BOT_TOKEN` + `DISCORD_USER_ID`) and/or Slack (`SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` + `SLACK_USER_ID`).
 
 ### Discord
 
@@ -44,6 +47,15 @@ OpenAPI docs (`/docs`) are enabled in `development` and `test` only.
 3. Enable Developer Mode in Discord, right-click your user → Copy User ID → `DISCORD_USER_ID`.
 4. **OAuth2 → URL Generator**: scope `bot`. Permissions: Send Messages, Read Message History, Attach Files, Add Reactions. Open the URL and add the bot to a private server you share with it (required before you can DM it).
 5. Restart the API. DM the bot, or `@mention` it in a server channel. Only `DISCORD_USER_ID` is answered.
+
+### Slack
+
+1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps) (or reuse an existing one).
+2. **OAuth & Permissions** bot scopes: `chat:write`, `files:read`, `users:read`, `reactions:write`, `im:history` (and `im:write` / `channels:history` as needed). Install to the workspace → `SLACK_BOT_TOKEN` (`xoxb-…`).
+3. **Basic Information** → Signing Secret → `SLACK_SIGNING_SECRET`.
+4. Your Slack member ID → `SLACK_USER_ID` (Profile → ⋯ → Copy member ID).
+5. **Event Subscriptions** → Enable → Request URL `https://<your-domain>/slack/events`. Subscribe the bot to `message.im`.
+6. Restart the API. DM the bot. Only `SLACK_USER_ID` is answered. Cron/notify DMs go to both Slack and Discord when both are configured.
 
 ### ChatGPT / Codex fallback (optional)
 
@@ -58,11 +70,11 @@ Local alternative: `python -m src.agent.codex_login` (needs Postgres). Plan quot
 
 ### Google (Gmail + Calendar)
 
-Do not paste a refresh token into env as the main setup. Connect from Discord after deploy.
+Do not paste a refresh token into env as the main setup. Connect from Discord or Slack after deploy.
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) create (or reuse) an OAuth **Web application** client. Enable **Gmail API** and **Google Calendar API**.
 2. Add authorized redirect URI: `https://<your-domain>/auth/google/callback` (must match `APP_PUBLIC_URL`).
-3. Consent screen: **Testing**, add your Google account as a test user. (Testing refresh tokens last 7 days — say `connect google` in Discord to refresh. Workspace **Internal** apps last longer.)
+3. Consent screen: **Testing**, add your Google account as a test user. (Testing refresh tokens last 7 days — say `connect google` in Discord or Slack to refresh. Workspace **Internal** apps last longer.)
 4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. `GOOGLE_REFRESH_TOKEN` is optional leftover fallback.
 5. DM the bot `connect google`, open the link, approve access (unverified-app warning is expected: Advanced → Go to … → Allow).
 6. Say `connect google` again to add another account (work + personal). Google will ask which account. Optional: ask the agent to label it (`work`, `personal`) or set the default. Gmail/Calendar tools take an `account` email or label.
@@ -71,12 +83,12 @@ Tokens are stored in Postgres (one row per Google email). If Google revokes acce
 
 ### Daily brief (GitHub Actions)
 
-The brief is DMed on Discord. Cron routes return immediately and run the job in-process afterward so Cloudflare/Coolify cannot 504 a long brief. A job failure is logged and DMed; it does not fail the GitHub Action.
+The brief is DMed on every configured surface (Discord and/or Slack). Cron routes return immediately and run the job in-process afterward so Cloudflare/Coolify cannot 504 a long brief. A job failure is logged and DMed; it does not fail the GitHub Action.
 
 1. Set repo secrets: **`AGENT_BASE_URL`** (no trailing slash), e.g. `https://cto-agent.example.com`, and **`CRON_SECRET`** (same value as in production `CRON_SECRET`).
 2. Connect GitHub from Discord (`connect github`) after setting **`GITHUB_CLIENT_ID`** and **`GITHUB_CLIENT_SECRET`** (GitHub OAuth App, callback `{APP_PUBLIC_URL}/auth/github/callback`). The brief lists recently pushed repos the token can access (last 14 days, up to 10) and summarizes open PRs plus failing CI on each default branch. `GITHUB_PAT` is optional leftover.
 3. Workflow [`.github/workflows/cron-daily-brief.yml`](.github/workflows/cron-daily-brief.yml) hits `POST /cron/daily-brief`; allow ~2 minutes for LLM + APIs (`--max-time 120`).
-4. Confirm the API log shows `discord connected` after deploy. A brief cannot DM you if the Gateway bot is down.
+4. Confirm the API log shows `discord connected` and/or `slack events enabled` after deploy. A brief cannot DM you if no chat surface is up.
 
 ### Work board
 

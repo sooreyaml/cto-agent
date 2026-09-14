@@ -14,7 +14,7 @@ ToolDef = dict[str, Any]
 
 
 def _all_tools() -> dict[str, ToolDef]:
-    return {
+    tools: dict[str, ToolDef] = {
         **work_tools,
         **connections_tools,
         **google_connect_tools,
@@ -23,6 +23,13 @@ def _all_tools() -> dict[str, ToolDef]:
         **github_tools,
         **granola_tools,
     }
+    from src.config import get_settings
+
+    if get_settings().slack_enabled:
+        from src.tools.slack_reminders import slack_reminder_tools
+
+        tools.update(slack_reminder_tools)
+    return tools
 
 
 all_tools = _all_tools()

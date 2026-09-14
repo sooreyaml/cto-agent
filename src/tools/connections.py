@@ -1,5 +1,7 @@
 from typing import Any
 
+from src.agent.codex_oauth import connect_message_markdown as openai_connect_message
+from src.agent.codex_oauth import spawn_login_poll, start_device_auth
 from src.connections.catalog import catalog_public, get_provider, normalize_provider
 from src.connections.github_oauth import (
     connect_message_markdown as github_connect_message,
@@ -10,6 +12,21 @@ from src.connections.http import connected_request
 from src.connections.repository import delete_secret, list_secrets, save_secret
 from src.google.service import connect_message_markdown as google_connect_message
 from src.google.service import oauth_is_configured as google_oauth_is_configured
+
+
+async def _codex_login_done(_cred: object) -> None:
+    from src.notify import notify_owner
+
+    await notify_owner(
+        "ChatGPT / Codex is connected. OpenRouter stays primary; I will fall back "
+        "to your subscription if OpenRouter fails."
+    )
+
+
+async def _codex_login_failed(err: BaseException) -> None:
+    from src.notify import notify_owner
+
+    await notify_owner(f"Codex login failed: {err}")
 
 
 async def _catalog(_args: dict[str, Any]) -> dict[str, Any]:
@@ -30,6 +47,10 @@ async def _connect(args: dict[str, Any]) -> dict[str, Any]:
         return {"provider": "github", "discord_markdown": github_connect_message()}
     if provider == "granola":
         return {"provider": "granola", "discord_markdown": granola_connect_message()}
+    if provider in {"openai-codex", "openai", "chatgpt", "codex"}:
+        pending = await start_device_auth()
+        spawn_login_poll(pending, _codex_login_done, _codex_login_failed)
+        return {"provider": "openai-codex", "discord_markdown": openai_connect_message(pending)}
     spec = get_provider(provider)
     return {
         "provider": provider,
@@ -86,8 +107,8 @@ connections_tools = {
             "function": {
                 "name": "connections_catalog",
                 "description": (
-                    "List tools the user can connect from Discord. Google, GitHub, and Granola "
-                    "use browser OAuth (connections_connect). Others still take an API key. "
+                    "List tools the user can connect from Discord. Google, GitHub, Granola, and "
+                    "ChatGPT/Codex use OAuth (connections_connect). Others still take an API key. "
                     "Never tell them to edit .env."
                 ),
                 "parameters": {"type": "object", "properties": {}},
@@ -101,17 +122,17 @@ connections_tools = {
             "function": {
                 "name": "connections_connect",
                 "description": (
-                    "Start a browser OAuth connect for google, github, or granola. "
+                    "Start a browser OAuth connect for google, github, granola, or openai-codex. "
                     "Send discord_markdown to the user. They can also say connect github / "
-                    "connect granola / connect google. Never ask them to paste a GitHub PAT "
-                    "or Granola API key."
+                    "connect granola / connect google / connect openai. Never ask them to paste "
+                    "a GitHub PAT, Granola API key, or OpenAI API key for Codex."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "provider": {
                             "type": "string",
-                            "description": "google, github, or granola (other providers explain API-key flow)",
+                            "description": "google, github, granola, or openai-codex (other providers explain API-key flow)",
                         },
                     },
                     "required": ["provider"],
@@ -138,8 +159,8 @@ connections_tools = {
                 "name": "connections_save",
                 "description": (
                     "Store an API token the user pasted in Discord for key-based tools "
-                    "(Linear, Sentry, Coolify, …). Do not use this for GitHub or Granola — "
-                    "those are browser OAuth via connections_connect. Do not echo the token."
+                    "(Linear, Sentry, Coolify, …). Do not use this for GitHub, Granola, or "
+                    "ChatGPT/Codex — those are OAuth via connections_connect. Do not echo the token."
                 ),
                 "parameters": {
                     "type": "object",

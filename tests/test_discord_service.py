@@ -170,3 +170,34 @@ async def test_granola_connect_command(discord_owner: str, monkeypatch: pytest.M
     await handle_message(message, bot_user_id=9)
     assert message.channel.sent == ["Granola link"]
     assert called["agent"] is False
+
+
+@pytest.mark.asyncio
+async def test_openai_connect_command(discord_owner: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.agent.codex_oauth import DevicePending
+
+    pending = DevicePending(device_auth_id="dev", user_code="ABCD-1234", interval_s=1)
+
+    async def fake_start():
+        return pending
+
+    spawned: dict[str, object] = {}
+
+    def fake_spawn(got, on_done, on_error) -> None:
+        spawned["pending"] = got
+
+    called = {"agent": False}
+
+    async def fake_agent(**kwargs: object) -> dict[str, object]:
+        called["agent"] = True
+        return {"text": "nope"}
+
+    monkeypatch.setattr("src.discord.service.start_device_auth", fake_start)
+    monkeypatch.setattr("src.discord.service.spawn_login_poll", fake_spawn)
+    monkeypatch.setattr("src.discord.service.run_agent", fake_agent)
+    message = FakeMessage(content="connect openai")
+    await handle_message(message, bot_user_id=9)
+    assert called["agent"] is False
+    assert spawned["pending"] is pending
+    assert "ABCD-1234" in message.channel.sent[0]
+    assert "fallback" in message.channel.sent[0].lower()

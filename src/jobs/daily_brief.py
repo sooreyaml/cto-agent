@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi.concurrency import run_in_threadpool
 
-from src.agent.llm import MODEL, llm
+from src.agent.llm import current_model, llm
 from src.config import get_settings
 from src.connections.repository import resolve_token
 from src.google.service import is_google_connected, list_accounts_sync
@@ -200,7 +200,7 @@ async def run_daily_brief() -> None:
     }
 
     completion = await llm.chat.completions.create(
-        model=MODEL,
+        model=current_model(),
         messages=[
             {
                 "role": "system",

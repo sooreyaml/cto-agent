@@ -6,6 +6,7 @@ from src.connections.constants import (
     _CONNECT_PREFIXES,
     GITHUB_CONNECT_COMMANDS,
     GRANOLA_CONNECT_COMMANDS,
+    OPENAI_CONNECT_COMMANDS,
 )
 from src.google.service import is_google_connect_command
 
@@ -27,4 +28,6 @@ def match_connect_command(text: str) -> str | None:
         return "github"
     if cleaned in GRANOLA_CONNECT_COMMANDS:
         return "granola"
+    if cleaned in OPENAI_CONNECT_COMMANDS:
+        return "openai-codex"
     return None

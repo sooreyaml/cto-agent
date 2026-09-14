@@ -1,12 +1,12 @@
 # CTO Agent
 
-Discord DM → FastAPI → OpenRouter (Claude) → Postgres memory.
+Discord DM → FastAPI → OpenRouter or ChatGPT/Codex OAuth → Postgres memory.
 
 ## Quick start
 
 Compose starts **Postgres and the API** together. You do not need a separate Coolify/database resource.
 
-1. Copy env and fill Discord / OpenRouter / other secrets:
+1. Copy env and fill Discord / OpenRouter (or Codex) / other secrets:
 
    ```bash
    cp .env.example .env
@@ -44,6 +44,17 @@ OpenAPI docs (`/docs`) are enabled in `development` and `test` only.
 3. Enable Developer Mode in Discord, right-click your user → Copy User ID → `DISCORD_USER_ID`.
 4. **OAuth2 → URL Generator**: scope `bot`. Permissions: Send Messages, Read Message History, Attach Files, Add Reactions. Open the URL and add the bot to a private server you share with it (required before you can DM it).
 5. Restart the API. DM the bot, or `@mention` it in a server channel. Only `DISCORD_USER_ID` is answered.
+
+### ChatGPT / Codex fallback (optional)
+
+OpenRouter stays the primary model. After you connect ChatGPT, Codex OAuth is used only when OpenRouter fails (rate limit, timeout, 5xx, or billing). Same device-code login Hermes uses — not an OpenAI API key.
+
+1. Keep `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` set. Leave `LLM_PROVIDER=openrouter`.
+2. DM the bot `connect openai`. Open the link, sign in, enter the one-time code. Enable **Device code authorization** in ChatGPT → Settings → Security if it is rejected.
+3. Wait for the “connected” DM (up to 15 minutes). Tokens live in Postgres and refresh automatically. This login is **separate** from the Codex CLI so they do not invalidate each other.
+4. Optional: `CODEX_MODEL` (default `gpt-5.4`) is the fallback model. Set `LLM_PROVIDER=openai-codex` only if you want Codex as the sole provider.
+
+Local alternative: `python -m src.agent.codex_login` (needs Postgres). Plan quota still applies; this is not unlimited API.
 
 ### Google (Gmail + Calendar)
 
@@ -94,5 +105,5 @@ DM the bot `connect granola` and sign in in the browser. Granola MCP uses OAuth 
 | `docker compose up --build`                           | App + Postgres                                   |
 | `uvicorn src.main:app --reload --port 8000`           | API only (needs local Postgres)                  |
 | `alembic upgrade head`                                | Apply migrations (host / already run in compose) |
-| `pytest`                                              | Route and signature tests                        |
+| `python -m src.agent.codex_login`                     | ChatGPT / Codex device-code login (or DM `connect openai`) |
 | `ruff check --fix src tests && ruff format src tests` | Lint / format                                    |

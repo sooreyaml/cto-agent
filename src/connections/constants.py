@@ -33,6 +33,26 @@ GRANOLA_CONNECT_COMMANDS = frozenset(
     }
 )
 
+OPENAI_CONNECT_COMMANDS = frozenset(
+    {
+        "connect openai",
+        "reconnect openai",
+        "link openai",
+        "openai connect",
+        "connect chatgpt",
+        "reconnect chatgpt",
+        "link chatgpt",
+        "chatgpt connect",
+        "connect codex",
+        "reconnect codex",
+        "link codex",
+        "codex connect",
+        "add openai",
+        "add chatgpt",
+        "add codex",
+    }
+)
+
 HIDDEN_EXTRA_KEYS = frozenset(
     {
         "refresh_token",

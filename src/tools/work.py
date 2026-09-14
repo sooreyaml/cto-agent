@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any
 
-from src.agent.llm import MODEL, llm
+from src.agent.llm import current_model, llm
 from src.integrations.granola import granola_request
 from src.work.repository import (
     brief_bundle,
@@ -59,7 +59,7 @@ async def _ingest_notes(args: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Provide text or granola_meeting_id")
 
     completion = await llm.chat.completions.create(
-        model=MODEL,
+        model=current_model(),
         messages=[
             {
                 "role": "system",

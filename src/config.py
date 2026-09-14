@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,9 +29,12 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = Field(min_length=1)
 
-    OPENROUTER_API_KEY: str = Field(min_length=1)
+    LLM_PROVIDER: Literal["openrouter", "openai-codex"] = "openrouter"
+    OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = "anthropic/claude-sonnet-4.6"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    CODEX_MODEL: str = "gpt-5.4"
+    CODEX_BASE_URL: str = "https://chatgpt.com/backend-api/codex"
 
     DISCORD_BOT_TOKEN: str = Field(min_length=1)
     DISCORD_USER_ID: str = Field(min_length=1)
@@ -58,10 +61,16 @@ class Settings(BaseSettings):
     def strip_strings(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("OPENROUTER_BASE_URL", "GRANOLA_API_BASE", "APP_PUBLIC_URL")
+    @field_validator("OPENROUTER_BASE_URL", "GRANOLA_API_BASE", "APP_PUBLIC_URL", "CODEX_BASE_URL")
     @classmethod
     def strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def require_openrouter_key(self) -> Self:
+        if self.LLM_PROVIDER == "openrouter" and not self.OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter")
+        return self
 
     @property
     def async_database_url(self) -> str:

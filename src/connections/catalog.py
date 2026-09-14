@@ -3,6 +3,13 @@ from typing import Any
 Provider = dict[str, Any]
 
 PROVIDERS: dict[str, Provider] = {
+    "openai-codex": {
+        "name": "ChatGPT / Codex",
+        "base_url": "https://chatgpt.com/backend-api/codex",
+        "auth": "oauth",
+        "how": "Say “connect openai” in Discord, open the link, and enter the device code. OpenRouter stays primary; this is the ChatGPT/Codex fallback, not an API key.",
+        "extra": ["account_id"],
+    },
     "github": {
         "name": "GitHub",
         "base_url": "https://api.github.com",

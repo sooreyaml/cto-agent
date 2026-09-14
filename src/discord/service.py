@@ -3,6 +3,8 @@ import re
 from contextlib import asynccontextmanager
 from typing import Any
 
+from src.agent.codex_oauth import connect_message_markdown as openai_connect_message
+from src.agent.codex_oauth import spawn_login_poll, start_device_auth
 from src.agent.loop import run_agent
 from src.config import get_settings
 from src.connections.commands import match_connect_command
@@ -118,6 +120,21 @@ async def handle_message(message: Any, *, bot_user_id: int) -> None:
             return
         if connect == "granola":
             await channel.send(granola_connect_message())
+            return
+        if connect == "openai-codex":
+            pending = await start_device_auth()
+            await channel.send(openai_connect_message(pending))
+
+            async def _done(_cred: object) -> None:
+                await channel.send(
+                    "ChatGPT / Codex is connected. OpenRouter stays primary; I will fall "
+                    "back to your subscription if OpenRouter fails."
+                )
+
+            async def _failed(err: BaseException) -> None:
+                await channel.send(f"Codex login failed: {_public_error(err)}")
+
+            spawn_login_poll(pending, _done, _failed)
             return
 
     try:

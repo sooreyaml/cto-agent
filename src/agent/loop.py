@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Any
 
-from src.agent.llm import MODEL, llm
+from src.agent.llm import current_model, llm
 from src.agent.prompt import build_system_prompt
 from src.agent.registry import tool_registry, tool_specs
 from src.memory.repository import load_history, persist_turn
@@ -66,7 +66,7 @@ async def run_agent(
     for _ in range(MAX_ITERATIONS):
         iterations += 1
         kwargs: dict[str, Any] = {
-            "model": MODEL,
+            "model": current_model(),
             "messages": messages,
             "temperature": 0.3,
             "max_tokens": 2048,

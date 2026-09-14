@@ -3,6 +3,7 @@ import re
 from contextlib import asynccontextmanager
 from typing import Any
 
+import discord
 from src.agent.codex_oauth import connect_message_markdown as openai_connect_message
 from src.agent.codex_oauth import spawn_login_poll, start_device_auth
 from src.agent.loop import run_agent
@@ -60,6 +61,12 @@ def _public_error(err: BaseException) -> str:
             "container is the app itself, not Postgres."
         )
     return text
+
+
+def _link_button(url: str, label: str) -> discord.ui.View:
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(style=discord.ButtonStyle.link, label=label, url=url))
+    return view
 
 
 async def handle_message(message: Any, *, bot_user_id: int) -> None:
@@ -123,7 +130,10 @@ async def handle_message(message: Any, *, bot_user_id: int) -> None:
             return
         if connect == "openai-codex":
             pending = await start_device_auth()
-            await channel.send(openai_connect_message(pending))
+            await channel.send(
+                openai_connect_message(pending),
+                view=_link_button(pending.verification_uri, "Open ChatGPT device login"),
+            )
 
             async def _done(_cred: object) -> None:
                 await channel.send(

@@ -49,17 +49,23 @@ class DevicePending:
 
 def connect_message_markdown(pending: DevicePending) -> str:
     url = pending.verification_uri
+    code = pending.user_code.strip().upper()
     return "\n".join(
         [
-            "**Connect ChatGPT / Codex** so I can run on your Plus/Pro (or Codex) subscription "
-            "as a fallback when OpenRouter fails.",
+            "**Connect ChatGPT / Codex** so I can fall back to your Plus/Pro (or Codex) "
+            "subscription when OpenRouter fails.",
             "",
-            f"1. Open [{url}]({url})",
-            f"2. Sign in and enter this code: `{pending.user_code}`",
+            f"[Open ChatGPT device login]({url})",
+            url,
             "",
-            "Enable **Device code authorization** in ChatGPT → Settings → Security if the code is rejected.",
-            "I will keep polling for about 15 minutes. This is a separate login from the Codex CLI "
-            "(sharing refresh tokens would kick one of them off).",
+            f"Then sign in and enter this code (15 min): **{code}**",
+            "",
+            "The page can be on your laptop even if Discord is on your phone — type the code "
+            "on that browser page, not in the ChatGPT app. Same ChatGPT account as Plus/Pro.",
+            "",
+            "If it says it could not authorize the device: ChatGPT → Settings → Security → "
+            "turn on **Device code authorization**, then say `connect openai` again for a "
+            "fresh code. Do not reuse an old tab.",
         ]
     )
 

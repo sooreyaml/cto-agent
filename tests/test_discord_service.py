@@ -10,9 +10,11 @@ class FakeChannel:
     def __init__(self, channel_id: int = 99) -> None:
         self.id = channel_id
         self.sent: list[str] = []
+        self.kwargs: dict[str, object] = {}
 
-    async def send(self, text: str) -> None:
+    async def send(self, text: str, **kwargs: object) -> None:
         self.sent.append(text)
+        self.kwargs = kwargs
 
     @asynccontextmanager
     async def typing(self):
@@ -200,4 +202,6 @@ async def test_openai_connect_command(discord_owner: str, monkeypatch: pytest.Mo
     assert called["agent"] is False
     assert spawned["pending"] is pending
     assert "ABCD-1234" in message.channel.sent[0]
-    assert "fallback" in message.channel.sent[0].lower()
+    assert "https://auth.openai.com/codex/device" in message.channel.sent[0]
+    assert "[Open ChatGPT device login](" in message.channel.sent[0]
+    assert message.channel.kwargs.get("view") is not None

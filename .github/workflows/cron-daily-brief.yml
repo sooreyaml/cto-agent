@@ -22,7 +22,12 @@ jobs:
             --oauth2-bearer "${CRON_SECRET}" \
             -H "X-Cron-Secret: ${CRON_SECRET}" \
             -H "Content-Type: application/json" \
-            --max-time 120)
+            --connect-timeout 10 \
+            --max-time 45 \
+            --retry 3 \
+            --retry-delay 5 \
+            --retry-max-time 180 \
+            --retry-all-errors)
           echo "HTTP ${code}"
           cat /tmp/cron-body
           echo

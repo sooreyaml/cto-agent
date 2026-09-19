@@ -87,7 +87,7 @@ The brief is DMed on every configured surface (Discord and/or Slack). Cron route
 
 1. Set repo secrets: **`AGENT_BASE_URL`** (no trailing slash), e.g. `https://cto-agent.example.com`, and **`CRON_SECRET`** (same value as in production `CRON_SECRET`).
 2. Connect GitHub from Discord (`connect github`) after setting **`GITHUB_CLIENT_ID`** and **`GITHUB_CLIENT_SECRET`** (GitHub OAuth App, callback `{APP_PUBLIC_URL}/auth/github/callback`). The brief lists recently pushed repos the token can access (last 14 days, up to 10) and summarizes open PRs plus failing CI on each default branch. `GITHUB_PAT` is optional leftover.
-3. Workflow [`.github/workflows/cron-daily-brief.yml`](.github/workflows/cron-daily-brief.yml) hits `POST /cron/daily-brief`; allow ~2 minutes for LLM + APIs (`--max-time 120`).
+3. Workflow [`.github/workflows/cron-daily-brief.yml`](.github/workflows/cron-daily-brief.yml) hits `POST /cron/daily-brief` and retries transient proxy/network failures for up to three minutes. The actual brief continues in-process after the endpoint acknowledges it.
 4. Confirm the API log shows `discord connected` and/or `slack events enabled` after deploy. A brief cannot DM you if no chat surface is up.
 
 ### Work board

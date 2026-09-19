@@ -21,6 +21,7 @@ logging.basicConfig(
     level=settings.LOG_LEVEL.upper(), format="%(asctime)s %(levelname)s %(name)s %(message)s"
 )
 logger = logging.getLogger("cto-agent")
+DATABASE_STARTUP_TIMEOUT_SECONDS = 5
 
 
 @asynccontextmanager
@@ -28,7 +29,7 @@ async def lifespan(_app: FastAPI):
     set_main_loop(asyncio.get_running_loop())
     logger.info("server starting env=%s postgres=%s", settings.NODE_ENV, database_target())
     try:
-        await ping_db()
+        await asyncio.wait_for(ping_db(), timeout=DATABASE_STARTUP_TIMEOUT_SECONDS)
         logger.info("postgres reachable")
     except Exception:
         logger.exception(
@@ -37,7 +38,7 @@ async def lifespan(_app: FastAPI):
             database_target(),
         )
     if settings.discord_enabled:
-        await start_discord_bot()
+        start_discord_bot()
     if settings.slack_enabled:
         logger.info("slack events enabled path=/slack/events owner=%s", settings.SLACK_USER_ID)
     yield

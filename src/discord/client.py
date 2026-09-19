@@ -7,6 +7,7 @@ from src.discord.format import split_discord_sections
 from src.discord.service import handle_message
 
 logger = logging.getLogger(__name__)
+READY_TIMEOUT_SECONDS = 30
 
 _client: "DiscordAgentClient | None" = None
 _task: asyncio.Task[None] | None = None
@@ -33,15 +34,20 @@ def get_discord_client() -> DiscordAgentClient | None:
 
 async def post_discord_dm(user_id: str, text: str) -> None:
     client = get_discord_client()
-    if client is None or not client.is_ready():
+    if client is None:
         raise RuntimeError("Discord bot is not connected")
+    if not client.is_ready():
+        try:
+            await asyncio.wait_for(client.wait_until_ready(), timeout=READY_TIMEOUT_SECONDS)
+        except TimeoutError as exc:
+            raise RuntimeError("Discord bot did not become ready") from exc
     user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
     channel = user.dm_channel or await user.create_dm()
     for chunk in split_discord_sections(text):
         await channel.send(chunk)
 
 
-async def start_discord_bot() -> None:
+def start_discord_bot() -> None:
     global _client, _task
     settings = get_settings()
     if _client is not None:
@@ -62,15 +68,7 @@ async def start_discord_bot() -> None:
             logger.exception("discord bot stopped unexpectedly")
 
     _task = asyncio.create_task(_run(), name="discord-bot")
-    for _ in range(60):
-        if client.is_ready():
-            break
-        if _task.done():
-            logger.error("discord bot failed to start")
-            break
-        await asyncio.sleep(0.5)
-    else:
-        logger.error("discord did not become ready within 30s")
+    logger.info("discord connection started in background")
 
 
 async def stop_discord_bot() -> None:

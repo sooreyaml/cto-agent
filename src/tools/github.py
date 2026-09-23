@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 
+from src.ci.intelligence import compact_workflow_jobs, compact_workflow_run
 from src.config import get_settings
 from src.connections.repository import resolve_extra
 from src.exceptions import ConfigError
@@ -268,6 +269,51 @@ async def _branch_ci(args: dict[str, Any]) -> list[dict[str, Any]]:
             }
             for run in runs
         ]
+
+
+def _workflow_run_id(args: dict[str, Any]) -> int:
+    try:
+        run_id = int(args.get("run_id"))
+    except (TypeError, ValueError) as err:
+        raise ConfigError("run_id is required") from err
+    if run_id <= 0:
+        raise ConfigError("run_id must be positive")
+    return run_id
+
+
+async def _workflow_run(args: dict[str, Any]) -> dict[str, Any]:
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
+    run_id = _workflow_run_id(args)
+    async with github_client() as client:
+        response = await client.get(f"/repos/{owner}/{repo}/actions/runs/{run_id}")
+        response.raise_for_status()
+        payload = response.json()
+        compact = compact_workflow_run(
+            {
+                **payload,
+                "repo": f"{owner}/{repo}",
+                "owner": owner,
+                "repo_name": repo,
+            }
+        )
+        compact["repo"] = f"{owner}/{repo}"
+        return compact
+
+
+async def _workflow_jobs(args: dict[str, Any]) -> dict[str, Any]:
+    owner, repo = await resolve_repo(args.get("owner"), args.get("repo"))
+    run_id = _workflow_run_id(args)
+    async with github_client() as client:
+        response = await client.get(
+            f"/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
+            params={"per_page": _per_page(args, 20, 50)},
+        )
+        response.raise_for_status()
+        return {
+            "repo": f"{owner}/{repo}",
+            "run_id": run_id,
+            "jobs": compact_workflow_jobs(response.json()),
+        }
 
 
 async def _readme(args: dict[str, Any]) -> dict[str, Any]:
@@ -543,6 +589,45 @@ github_tools = {
             },
         },
         "handler": _branch_ci,
+    },
+    "github_get_workflow_run": {
+        "spec": {
+            "type": "function",
+            "function": {
+                "name": "github_get_workflow_run",
+                "description": "Get bounded metadata for one GitHub Actions workflow run; never returns raw logs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "run_id": {"type": "integer"},
+                    },
+                    "required": ["run_id"],
+                },
+            },
+        },
+        "handler": _workflow_run,
+    },
+    "github_get_workflow_run_jobs": {
+        "spec": {
+            "type": "function",
+            "function": {
+                "name": "github_get_workflow_run_jobs",
+                "description": "List bounded job conclusions and failed step names for one workflow run; never returns raw logs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "run_id": {"type": "integer"},
+                        "per_page": {"type": "integer"},
+                    },
+                    "required": ["run_id"],
+                },
+            },
+        },
+        "handler": _workflow_jobs,
     },
     "github_get_repository_readme": {
         "spec": {

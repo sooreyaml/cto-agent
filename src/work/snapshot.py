@@ -16,4 +16,5 @@ async def load_work_snapshot() -> str:
         priorities=rows["priorities"],
         tasks=rows["tasks"],
         commitments=rows["commitments"],
+        decisions=rows.get("decisions"),
     )

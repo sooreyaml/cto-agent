@@ -85,6 +85,13 @@ def test_format_work_snapshot_caps_and_orders() -> None:
                 "status": "open",
             }
         ],
+        decisions=[
+            {
+                "title": "Hosting",
+                "decision": "Stay on Coolify",
+                "rationale": "Keeps deployment simple",
+            }
+        ],
         now=datetime(2026, 9, 8, 12, 0, 0),
     )
     assert "P1: Ship agent" in text
@@ -92,6 +99,7 @@ def test_format_work_snapshot_caps_and_orders() -> None:
     assert "Blocked deploy" in text
     assert "Later" not in text
     assert "Email investor" in text
+    assert "Hosting: Stay on Coolify" in text
     assert "Notion" not in text
     assert len(text.splitlines()) <= 15
 

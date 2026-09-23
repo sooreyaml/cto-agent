@@ -7,6 +7,7 @@ from src.tools.github import github_tools
 from src.tools.gmail import gmail_tools
 from src.tools.google_connect import google_connect_tools
 from src.tools.granola import granola_tools
+from src.tools.memory import memory_tools
 from src.tools.work import work_tools
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
@@ -22,6 +23,7 @@ def _all_tools() -> dict[str, ToolDef]:
         **calendar_tools,
         **github_tools,
         **granola_tools,
+        **memory_tools,
     }
     from src.config import get_settings
 

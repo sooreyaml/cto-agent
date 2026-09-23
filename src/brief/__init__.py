@@ -1,0 +1,1 @@
+"""Daily brief metadata persistence."""

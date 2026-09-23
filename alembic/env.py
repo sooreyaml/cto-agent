@@ -4,8 +4,11 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import pool
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+from src.brief import models as _brief_models  # noqa: F401
+from src.ci import models as _ci_models  # noqa: F401
 from src.config import async_database_url_from
 from src.connections import models as _connections_models  # noqa: F401
 from src.google import models as _google_models  # noqa: F401
@@ -22,6 +25,7 @@ if not database_url:
     raise RuntimeError("DATABASE_URL is required to run migrations")
 config.set_main_option("sqlalchemy.url", async_database_url_from(database_url))
 target_metadata = Base.metadata
+MIGRATION_LOCK_ID = 824733201
 
 
 def run_migrations_offline() -> None:
@@ -37,9 +41,22 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
-    with context.begin_transaction():
-        context.run_migrations()
+    lock_acquired = False
+    if connection.dialect.name == "postgresql":
+        connection.execute(
+            text("SELECT pg_advisory_lock(:lock_id)"), {"lock_id": MIGRATION_LOCK_ID}
+        )
+        lock_acquired = True
+    try:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+    finally:
+        if lock_acquired:
+            connection.execute(
+                text("SELECT pg_advisory_unlock(:lock_id)"),
+                {"lock_id": MIGRATION_LOCK_ID},
+            )
 
 
 async def run_async_migrations() -> None:

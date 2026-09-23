@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from src.brief import models as _brief_models  # noqa: F401
+from src.ci import models as _ci_models  # noqa: F401
 from src.config import get_settings
 from src.connections import models as _connections_models  # noqa: F401
 from src.connections.router import router as connections_auth_router

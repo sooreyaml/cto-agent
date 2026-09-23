@@ -188,6 +188,7 @@ def format_work_snapshot(
     priorities: list[dict[str, Any]],
     tasks: list[dict[str, Any]],
     commitments: list[dict[str, Any]],
+    decisions: list[dict[str, Any]] | None = None,
     now: datetime | None = None,
 ) -> str:
     current = now or utcnow()
@@ -205,6 +206,13 @@ def format_work_snapshot(
             lines.append(f"- P{item.get('rank')}: {item.get('title')}{extra}")
     else:
         lines.append("Priorities: (none)")
+
+    recent_decisions = decisions or []
+    if recent_decisions:
+        lines.append("Recent decisions:")
+        for item in recent_decisions[:3]:
+            rationale = f" — {item['rationale']}" if item.get("rationale") else ""
+            lines.append(f"- {item.get('title')}: {item.get('decision')}{rationale}")
 
     snap_tasks = [t for t in tasks if task_is_snapshot_worthy(t, now=current, cutoff=cutoff)]
     snap_tasks.sort(

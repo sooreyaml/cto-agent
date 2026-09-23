@@ -452,7 +452,13 @@ async def snapshot_rows() -> dict[str, list[dict[str, Any]]]:
         commitments = await _list_commitments(
             session, status="open", query=None, due_before=None, limit=20
         )
-        return {"priorities": priorities, "tasks": tasks, "commitments": commitments}
+        decisions = await _list_decisions(session, query=None, limit=5)
+        return {
+            "priorities": priorities,
+            "tasks": tasks,
+            "commitments": commitments,
+            "decisions": decisions,
+        }
 
 
 async def brief_bundle() -> dict[str, Any]:

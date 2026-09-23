@@ -1,11 +1,13 @@
 from datetime import UTC, datetime
 
 import pytest
+from src.ci.intelligence import compact_workflow_jobs, compact_workflow_run
 from src.exceptions import ConfigError
 from src.tools.github import (
     comment_create_body,
     compact_issue,
     compact_repo,
+    github_tools,
     issue_create_body,
     parse_repo,
     pull_merge_body,
@@ -92,6 +94,44 @@ def test_compact_repo_and_issue() -> None:
     assert issue["repo"] == "acme/api"
     assert issue["is_pull_request"] is True
     assert issue["labels"] == ["bug"]
+
+
+def test_workflow_compaction_and_read_only_tool_specs() -> None:
+    run = compact_workflow_run(
+        {
+            "repo": "acme/api",
+            "owner": "acme",
+            "repo_name": "api",
+            "id": 42,
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_branch": "main",
+            "html_url": "https://github.com/acme/api/actions/runs/42",
+        }
+    )
+    jobs = compact_workflow_jobs(
+        {
+            "jobs": [
+                {
+                    "name": "test",
+                    "conclusion": "failure",
+                    "steps": [{"name": "pytest", "conclusion": "failure"}],
+                    "logs": "raw log should never be returned",
+                }
+            ]
+        }
+    )
+
+    assert run["external_id"] == "acme/api:42"
+    assert jobs[0]["failed_steps"][0]["name"] == "pytest"
+    assert "logs" not in jobs[0]
+    assert "github_get_workflow_run" in github_tools
+    assert (
+        "never returns raw logs"
+        in github_tools["github_get_workflow_run"]["spec"]["function"]["description"]
+    )
+    assert "github_get_workflow_run_jobs" in github_tools
 
 
 def test_issue_create_body() -> None:

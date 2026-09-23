@@ -22,7 +22,12 @@ Compose starts **Postgres and the API** together. You do not need a separate Coo
 
 The app container always uses `DATABASE_URL=postgresql://cto:…@db:5432/cto_agent` (the `db` service). That overrides any remote `DATABASE_URL` in `.env`.
 
-Migrations run automatically on container start (`alembic upgrade head`).
+Migrations run automatically before the API starts. The Docker entrypoint retries
+transient database startup failures (12 attempts, 5 seconds apart by default) and
+does not start Uvicorn if `alembic upgrade head` cannot complete. Override with
+`MIGRATION_MAX_ATTEMPTS` and `MIGRATION_RETRY_SECONDS` when a managed database
+needs a longer startup window. PostgreSQL advisory locking keeps concurrent app
+replicas from running migrations at the same time.
 
 Configure at least one chat surface:
 
@@ -97,6 +102,41 @@ Priorities, tasks, decisions, and commitments live in Postgres. The agent mutate
 Reminders: say when to nudge; `POST /cron/due` DMs due reminders and commitment `remind_at` times. CI watch: `POST /cron/watch` DMs new GitHub Actions failures on recently pushed repos.
 
 Workflow [`.github/workflows/cron-due-watch.yml`](.github/workflows/cron-due-watch.yml) hits both endpoints every 15 minutes.
+
+### Agent execution controller
+
+Phase 3 adds a provider-neutral plan/execute/verify layer around the existing
+OpenRouter and ChatGPT/Codex chat-completions loop. Explicitly complex requests
+(for example, investigations, implementations, migrations, or multi-step work)
+create an owner-scoped `agent_plans` record with a bounded objective, acceptance
+criteria, workflow phases, and metadata-only tool evidence. The plan is marked
+`planned`, `executing`, `verifying`, then `completed`, `blocked`, or `failed`.
+Simple lookups keep the fast path and do not create a plan. The agent response
+adds `planId` and `planStatus` only when a plan was created; provider selection
+and existing tool handlers are unchanged.
+
+### CTO intelligence layer
+
+Phase 4 adds bounded, provider-neutral CTO intelligence on top of the existing
+OpenRouter and ChatGPT/Codex loop:
+
+- GitHub Actions watch polls recently active repositories, enriches only a small
+  number of new failures with job and failed-step metadata, and stores owner-scoped
+  CI incidents with severity, streak, evidence, and resolution state. A partial
+  repository poll never resolves incidents. A GitHub 401 is handled as a
+  reconnect condition instead of escaping as `Cron \`watch\` failed`.
+- The daily brief ranks deterministic signals from CI, blocked/due work, calendar,
+  and unread Gmail before asking the configured model to render the message. If
+  the model is unavailable, a bounded evidence-linked fallback is delivered.
+  Each attempt records source health, action/evidence counts, render status, and
+  delivery status in `brief_runs`.
+- `github_get_workflow_run` and `github_get_workflow_run_jobs` are read-only,
+  bounded inspection tools. They expose metadata and failed step names, never raw
+  logs or credentials.
+
+The deployment entrypoint applies the Phase 4 schema automatically; for a manual
+local run use `alembic upgrade head`. Existing provider selection, OAuth
+connections, and tool handlers remain unchanged.
 
 ### GitHub
 
